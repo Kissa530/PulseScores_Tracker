@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PulseScores - Team Tracker</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- Top Navigation Header -->
+  <header class="app-header">
+    <div class="header-container">
+      <div class="brand">
+        <span class="logo-icon">⚡</span>
+        <h1 class="app-title">PulseScores</h1>
+      </div>
+      
+      <!-- Favorite Team Selector -->
+      <div class="favorite-picker-wrapper">
+        <label for="favorite-select" class="sr-only">Select Favorite Team</label>
+        <select id="favorite-select" class="favorite-select" aria-label="Select your favorite team">
+          <option value="" disabled selected>⭐ Select Favorite Team</option>
+          <option value="BOS">🏀 Boston Celtics</option>
+          <option value="LAL">🏀 Los Angeles Lakers</option>
+          <option value="GSW">🏀 Golden State Warriors</option>
+          <option value="NYK">🏀 New York Knicks</option>
+          <option value="CHI">🏀 Chicago Bulls</option>
+          <option value="MIA">🏀 Miami Heat</option>
+          <option value="MIL">🏀 Milwaukee Bucks</option>
+          <option value="PHX">🏀 Phoenix Suns</option>
+        </select>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content Dashboard -->
+  <main class="main-layout">
+    
+    <!-- Status & Info Bar -->
+    <div class="info-bar">
+      <div class="update-status" id="update-status" aria-live="polite">
+        <span class="status-indicator live" id="status-dot"></span>
+        <span id="last-updated-text">Updating...</span>
+      </div>
+      <button id="manual-refresh-btn" class="refresh-button" aria-label="Refresh scores">
+        <svg class="refresh-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
+        </svg>
+        <span>Refresh</span>
+      </button>
+    </div>
+
+    <!-- Error Banner -->
+    <div id="error-banner" class="error-banner hidden" role="alert">
+      <span>⚠️ Network issue. Reconnecting automatically...</span>
+    </div>
+
+    <!-- Favorite Team Spotlight Section -->
+    <section id="favorite-section" class="favorite-spotlight-section">
+      <h2 class="section-label">Your Team</h2>
+      <div id="favorite-game-container">
+        <!-- Rendered via JS -->
+      </div>
+    </section>
+
+    <!-- Other Today's Games Section -->
+    <section class="other-games-section">
+      <h2 class="section-label" id="other-games-heading">Other Games Today</h2>
+      <div id="other-games-container" class="games-grid">
+        <!-- Rendered via JS -->
+      </div>
+    </section>
+
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
