@@ -19,6 +19,7 @@
         <h1 class="app-title">PulseScores</h1>
       </div>
       
+      <!-- Header Actions (Selector & Login Button grouped together) -->
       <div class="header-actions">
         <!-- Favorite Team Selector -->
         <div class="favorite-picker-wrapper">
@@ -36,7 +37,7 @@
           </select>
         </div>
 
-        <!-- Auth Button -->
+        <!-- Login Button -->
         <button id="auth-modal-btn" class="auth-btn">Sign In</button>
       </div>
     </div>
@@ -49,7 +50,7 @@
     <div class="info-bar">
       <div class="update-status" id="update-status" aria-live="polite">
         <span class="status-indicator live" id="status-dot"></span>
-        <span id="last-updated-text">Connecting to Supabase...</span>
+        <span id="last-updated-text">Updating...</span>
       </div>
       <button id="manual-refresh-btn" class="refresh-button" aria-label="Refresh scores">
         <svg class="refresh-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -61,7 +62,7 @@
 
     <!-- Error Banner -->
     <div id="error-banner" class="error-banner hidden" role="alert">
-      <span>⚠️ Supabase connection issue. Retrying...</span>
+      <span>⚠️ Network issue. Reconnecting automatically...</span>
     </div>
 
     <!-- Favorite Team Spotlight Section -->
@@ -82,7 +83,7 @@
 
   </main>
 
-  <!-- Login/Signup Modal -->
+  <!-- Login/Sign Up Modal Overlay (Placed at the bottom of the body) -->
   <div id="auth-modal" class="auth-modal hidden">
     <div class="auth-modal-content">
       <button id="close-modal-btn" class="close-btn">&times;</button>
@@ -108,8 +109,9 @@
     </div>
   </div>
 
-  <!-- Supabase JS Client CDN -->
+  <!-- Include Supabase JS Client CDN -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="app.js"></script>
+
 </body>
 </html>
