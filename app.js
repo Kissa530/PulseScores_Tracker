@@ -23,44 +23,14 @@
     SAC: '👑', SAS: '🤠', TOR: '🦖', UTA: '🎷', WAS: '🧙'
   };
 
-  // Normalize ESPN abbreviations to match your 30-team HTML <select> values
   const CODE_MAP = {
-    ATL: 'ATL',
-    BOS: 'BOS',
-    BKN: 'BKN',
-    CHA: 'CHA',
-    CHI: 'CHI',
-    CLE: 'CLE',
-    DAL: 'DAL',
-    DEN: 'DEN',
-    DET: 'DET',
-    GS: 'GSW',   // ESPN sometimes returns 'GS'
-    GSW: 'GSW',
-    HOU: 'HOU',
-    IND: 'IND',
-    LAC: 'LAC',
-    LAL: 'LAL',
-    MEM: 'MEM',
-    MIA: 'MIA',
-    MIL: 'MIL',
-    MIN: 'MIN',
-    NO: 'NOP',   // ESPN sometimes returns 'NO'
-    NOP: 'NOP',
-    NY: 'NYK',   // ESPN sometimes returns 'NY'
-    NYK: 'NYK',
-    OKC: 'OKC',
-    ORL: 'ORL',
-    PHI: 'PHI',
-    PHX: 'PHX',
-    POR: 'POR',
-    SAC: 'SAC',
-    SA: 'SAS',   // ESPN sometimes returns 'SA'
-    SAS: 'SAS',
-    TOR: 'TOR',
-    UTA: 'UTA',
-    UTAH: 'UTA', // ESPN sometimes returns 'UTAH'
-    WAS: 'WAS',
-    WSH: 'WAS'   // ESPN sometimes returns 'WSH'
+    ATL: 'ATL', BOS: 'BOS', BKN: 'BKN', CHA: 'CHA', CHI: 'CHI',
+    CLE: 'CLE', DAL: 'DAL', DEN: 'DEN', DET: 'DET', GS: 'GSW',
+    GSW: 'GSW', HOU: 'HOU', IND: 'IND', LAC: 'LAC', LAL: 'LAL',
+    MEM: 'MEM', MIA: 'MIA', MIL: 'MIL', MIN: 'MIN', NO: 'NOP',
+    NOP: 'NOP', NY: 'NYK', NYK: 'NYK', OKC: 'OKC', ORL: 'ORL',
+    PHI: 'PHI', PHX: 'PHX', POR: 'POR', SAC: 'SAC', SA: 'SAS',
+    SAS: 'SAS', TOR: 'TOR', UTA: 'UTA', UTAH: 'UTA', WAS: 'WAS', WSH: 'WAS'
   };
 
   function normalizeCode(abbr) {
@@ -114,7 +84,6 @@
         if (favoriteSelect) favoriteSelect.value = favoriteTeamCode;
         renderDashboard(currentGamesData);
       } else if (favoriteTeamCode) {
-        // If user selected a team before logging in and has none saved in DB yet, push it to cloud
         await saveUserFavoriteTeam(favoriteTeamCode);
       }
     } catch (err) {
@@ -163,7 +132,7 @@
         const homeCode = normalizeCode(home.team.abbreviation);
         const awayCode = normalizeCode(away.team.abbreviation);
 
-        const state = event.status.type.state; // 'pre', 'in', or 'post'
+        const state = event.status.type.state;
         let status = 'UPCOMING';
         if (state === 'in') status = 'LIVE';
         if (state === 'post') status = 'FINAL';
@@ -214,7 +183,6 @@
   function handleUserSessionChange(user) {
     currentUser = user;
 
-    // Dynamically render or update user email badge next to the buttons
     let userBadge = document.getElementById('user-status-badge');
     if (!userBadge) {
       userBadge = document.createElement('span');
@@ -348,14 +316,13 @@
       fetchLiveGames(true);
     });
 
-    // Auth Modal Triggers
     authModalBtn.addEventListener('click', () => {
       authModal.classList.remove('hidden');
     });
 
     if (logoutBtn) {
-      logoutBtn.addEventListener('click', () => {
-        supabaseClient.auth.signOut();
+      logoutBtn.addEventListener('click', async () => {
+        await supabaseClient.auth.signOut();
       });
     }
 
@@ -363,7 +330,6 @@
       authModal.classList.add('hidden');
     });
 
-    // Event delegation so the Sign Up / Sign In toggle link keeps working after re-render
     authSwitchMode.addEventListener('click', (e) => {
       if (e.target && e.target.id === 'toggle-mode-link') {
         e.preventDefault();
@@ -382,7 +348,7 @@
       authError.classList.add('hidden');
       authSubmitBtn.textContent = 'Processing...';
 
-      const email = authEmailInput.value;
+      const email = authEmailInput.value.trim();
       const password = authPasswordInput.value;
       let error = null;
 
@@ -419,7 +385,6 @@
     checkUserSession();
     fetchLiveGames(false);
 
-    // Automatically poll live scores every 30 seconds
     setInterval(() => fetchLiveGames(false), 30000);
   }
 
