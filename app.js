@@ -1,6 +1,6 @@
 /**
  * PulseScores - Live ESPN & Supabase Auth Tracker
- * Architecture: Live ESPN Scoreboard API, LocalStorage, Auto-Refresh, and Supabase Auth.
+ * Architecture: Live ESPN Scoreboard API, LocalStorage, Auto-Refresh, and Supabase Auth + Profile Sync.
  */
 
 (function () {
@@ -25,42 +25,42 @@
 
   // Normalize ESPN abbreviations to match your 30-team HTML <select> values
   const CODE_MAP = {
-  ATL: 'ATL',
-  BOS: 'BOS',
-  BKN: 'BKN',
-  CHA: 'CHA',
-  CHI: 'CHI',
-  CLE: 'CLE',
-  DAL: 'DAL',
-  DEN: 'DEN',
-  DET: 'DET',
-  GS: 'GSW',   // ESPN sometimes returns 'GS'
-  GSW: 'GSW',
-  HOU: 'HOU',
-  IND: 'IND',
-  LAC: 'LAC',
-  LAL: 'LAL',
-  MEM: 'MEM',
-  MIA: 'MIA',
-  MIL: 'MIL',
-  MIN: 'MIN',
-  NO: 'NOP',   // ESPN sometimes returns 'NO'
-  NOP: 'NOP',
-  NY: 'NYK',   // ESPN sometimes returns 'NY'
-  NYK: 'NYK',
-  OKC: 'OKC',
-  ORL: 'ORL',
-  PHI: 'PHI',
-  PHX: 'PHX',
-  POR: 'POR',
-  SAC: 'SAC',
-  SA: 'SAS',   // ESPN sometimes returns 'SA'
-  SAS: 'SAS',
-  TOR: 'TOR',
-  UTA: 'UTA',
-  UTAH: 'UTA', // ESPN sometimes returns 'UTAH'
-  WAS: 'WAS',
-  WSH: 'WAS'   // ESPN sometimes returns 'WSH'
+    ATL: 'ATL',
+    BOS: 'BOS',
+    BKN: 'BKN',
+    CHA: 'CHA',
+    CHI: 'CHI',
+    CLE: 'CLE',
+    DAL: 'DAL',
+    DEN: 'DEN',
+    DET: 'DET',
+    GS: 'GSW',   // ESPN sometimes returns 'GS'
+    GSW: 'GSW',
+    HOU: 'HOU',
+    IND: 'IND',
+    LAC: 'LAC',
+    LAL: 'LAL',
+    MEM: 'MEM',
+    MIA: 'MIA',
+    MIL: 'MIL',
+    MIN: 'MIN',
+    NO: 'NOP',   // ESPN sometimes returns 'NO'
+    NOP: 'NOP',
+    NY: 'NYK',   // ESPN sometimes returns 'NY'
+    NYK: 'NYK',
+    OKC: 'OKC',
+    ORL: 'ORL',
+    PHI: 'PHI',
+    PHX: 'PHX',
+    POR: 'POR',
+    SAC: 'SAC',
+    SA: 'SAS',   // ESPN sometimes returns 'SA'
+    SAS: 'SAS',
+    TOR: 'TOR',
+    UTA: 'UTA',
+    UTAH: 'UTA', // ESPN sometimes returns 'UTAH'
+    WAS: 'WAS',
+    WSH: 'WAS'   // ESPN sometimes returns 'WSH'
   };
 
   function normalizeCode(abbr) {
@@ -95,6 +95,52 @@
   const authModalTitle = document.getElementById('auth-modal-title');
   const authError = document.getElementById('auth-error');
   const authSwitchMode = document.getElementById('auth-switch-mode');
+
+  // --- Cloud Profile Sync (Supabase) ---
+  async function loadUserFavoriteTeam(userId) {
+    try {
+      const { data, error } = await supabaseClient
+        .from('profiles')
+        .select('favorite_team')
+        .eq('id', userId)
+        .maybeSingle();
+
+      if (error) throw error;
+
+      if (data && data.favorite_team) {
+        favoriteTeamCode = data.favorite_team;
+        localStorage.setItem(STORAGE_KEY, favoriteTeamCode);
+        if (favoriteSelect) favoriteSelect.value = favoriteTeamCode;
+        renderDashboard(currentGamesData);
+      } else if (favoriteTeamCode) {
+        // If user selected a team before logging in and has none saved in DB yet, push it to cloud
+        await saveUserFavoriteTeam(favoriteTeamCode);
+      }
+    } catch (err) {
+      console.warn('Could not load cloud favorite team:', err.message);
+    }
+  }
+
+  async function saveUserFavoriteTeam(teamCode) {
+    if (!currentUser) return;
+
+    try {
+      const { error } = await supabaseClient
+        .from('profiles')
+        .upsert(
+          {
+            id: currentUser.id,
+            favorite_team: teamCode,
+            updated_at: new Date().toISOString()
+          },
+          { onConflict: 'id' }
+        );
+
+      if (error) throw error;
+    } catch (err) {
+      console.warn('Could not sync favorite team to cloud:', err.message);
+    }
+  }
 
   // --- Live Data Fetching from ESPN ---
   async function fetchLiveGames(isManual = false) {
@@ -144,7 +190,7 @@
       errorBanner.classList.add('hidden');
       if (statusDot) statusDot.classList.add('live');
     } catch (err) {
-      console.warn("Live score fetch warning:", err.message);
+      console.warn('Live score fetch warning:', err.message);
       errorBanner.classList.remove('hidden');
       if (statusDot) statusDot.classList.remove('live');
     } finally {
@@ -169,6 +215,7 @@
     if (user) {
       authModalBtn.textContent = 'Sign Out';
       authModal.classList.add('hidden');
+      loadUserFavoriteTeam(user.id);
     } else {
       authModalBtn.textContent = 'Sign In';
     }
@@ -272,6 +319,11 @@
     favoriteSelect.addEventListener('change', (e) => {
       favoriteTeamCode = e.target.value;
       localStorage.setItem(STORAGE_KEY, favoriteTeamCode);
+      
+      if (currentUser) {
+        saveUserFavoriteTeam(favoriteTeamCode);
+      }
+      
       renderDashboard(currentGamesData);
     });
 
