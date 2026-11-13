@@ -58,8 +58,11 @@
           </select>
         </div>
 
-        <!-- Auth Button -->
-        <button id="auth-modal-btn" class="auth-btn">Sign In</button>
+        <!-- Auth Controls Container (Sign In / User Badge / Sign Out) -->
+        <div class="auth-controls" style="display: flex; align-items: center; gap: 0.5rem;">
+          <button id="auth-modal-btn" class="auth-btn">Sign In</button>
+          <button id="logout-btn" class="auth-btn logout-btn hidden" style="background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3);">Sign Out</button>
+        </div>
       </div>
     </div>
   </header>
