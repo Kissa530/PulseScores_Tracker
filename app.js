@@ -8,8 +8,8 @@
 
   // --- Supabase Configuration ---
   // Replace these placeholders with your actual Supabase project URL and anon public key
-  const SUPABASE_URL = 'https://dmaoawahyxtprjmcwgvd.supabase.co'; 
-  const SUPABASE_ANON_KEY = 'sb_publishable_y3nA3bEJt1VjirXJ2QWy-Q_XOzMkNrx';
+  const SUPABASE_URL = SUPABASE_URL; 
+  const SUPABASE_ANON_KEY = SUPABASE_ANON_KEY;
   const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
   // --- Constants & State ---
