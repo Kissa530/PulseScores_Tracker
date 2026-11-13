@@ -7,7 +7,7 @@
   'use strict';
 
   // --- Supabase Configuration ---
-  // Replace these placeholders with your actual Supabase project URL and anon public key
+  // Replace these placeholders with your actual Supabase project URL and anon public key in v1
   const SUPABASE_URL = SUPABASE_URL; 
   const SUPABASE_ANON_KEY = SUPABASE_ANON_KEY;
   const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
