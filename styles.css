@@ -142,7 +142,13 @@ body {
   border-color: var(--accent-primary);
 }
 
-/* --- Auth Button --- */
+/* --- Auth Controls & Buttons --- */
+.auth-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .auth-btn {
   background-color: var(--accent-primary);
   color: #ffffff;
@@ -163,6 +169,16 @@ body {
 
 .auth-btn:active {
   transform: scale(0.97);
+}
+
+.logout-btn {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.logout-btn:hover {
+  background: rgba(239, 68, 68, 0.25);
 }
 
 /* --- Main Layout --- */
