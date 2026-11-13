@@ -1,16 +1,71 @@
 /**
- * PulseScores - Supabase Connected Tracker
- * Architecture: Supabase Client, LocalStorage, Realtime sync, and Auth.
+ * PulseScores - Live ESPN & Supabase Auth Tracker
+ * Architecture: Live ESPN Scoreboard API, LocalStorage, Auto-Refresh, and Supabase Auth.
  */
 
 (function () {
   'use strict';
 
   // --- Supabase Configuration ---
-  // Replace these placeholders with your actual Supabase project URL and anon public key in v1
-  const SUPABASE_URL = SUPABASE_URL; 
-  const SUPABASE_ANON_KEY = SUPABASE_ANON_KEY;
+  const SUPABASE_URL = 'https://dmaoawahyxtprjmcwgvd.supabase.co'; 
+  const SUPABASE_ANON_KEY = 'sb_publishable_y3nA3bEJt1VjirXJ2QWy-Q_XOzMkNrx';
   const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  // --- Live ESPN API & Team Mapping ---
+  const ESPN_NBA_URL = 'https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard';
+
+  const TEAM_EMOJIS = {
+    ATL: '🦅', BOS: '☘️', BKN: '🗽', CHA: '🐝', CHI: '🐂',
+    CLE: '⚔️', DAL: '🐴', DEN: '⛏️', DET: '⚙️', GSW: '🌉',
+    HOU: '🚀', IND: '🏎️', LAC: '⛵', LAL: '👑', MEM: '🐻',
+    MIA: '🔥', MIL: '🦌', MIN: '🐺', NOP: '⚜️', NYK: '🗽',
+    OKC: '⚡', ORL: '✨', PHI: '🔔', PHX: '☀️', POR: '🌹',
+    SAC: '👑', SAS: '🤠', TOR: '🦖', UTA: '🎷', WAS: '🧙'
+  };
+
+  // Normalize ESPN abbreviations to match your 30-team HTML <select> values
+  const CODE_MAP = {
+  ATL: 'ATL',
+  BOS: 'BOS',
+  BKN: 'BKN',
+  CHA: 'CHA',
+  CHI: 'CHI',
+  CLE: 'CLE',
+  DAL: 'DAL',
+  DEN: 'DEN',
+  DET: 'DET',
+  GS: 'GSW',   // ESPN sometimes returns 'GS'
+  GSW: 'GSW',
+  HOU: 'HOU',
+  IND: 'IND',
+  LAC: 'LAC',
+  LAL: 'LAL',
+  MEM: 'MEM',
+  MIA: 'MIA',
+  MIL: 'MIL',
+  MIN: 'MIN',
+  NO: 'NOP',   // ESPN sometimes returns 'NO'
+  NOP: 'NOP',
+  NY: 'NYK',   // ESPN sometimes returns 'NY'
+  NYK: 'NYK',
+  OKC: 'OKC',
+  ORL: 'ORL',
+  PHI: 'PHI',
+  PHX: 'PHX',
+  POR: 'POR',
+  SAC: 'SAC',
+  SA: 'SAS',   // ESPN sometimes returns 'SA'
+  SAS: 'SAS',
+  TOR: 'TOR',
+  UTA: 'UTA',
+  UTAH: 'UTA', // ESPN sometimes returns 'UTAH'
+  WAS: 'WAS',
+  WSH: 'WAS'   // ESPN sometimes returns 'WSH'
+  };
+
+  function normalizeCode(abbr) {
+    return CODE_MAP[abbr] || abbr;
+  }
 
   // --- Constants & State ---
   const STORAGE_KEY = 'pulsescores_favorite_team';
@@ -27,6 +82,7 @@
   const lastUpdatedText = document.getElementById('last-updated-text');
   const refreshBtn = document.getElementById('manual-refresh-btn');
   const errorBanner = document.getElementById('error-banner');
+  const statusDot = document.getElementById('status-dot');
 
   // Auth DOM Elements
   const authModalBtn = document.getElementById('auth-modal-btn');
@@ -38,46 +94,64 @@
   const authSubmitBtn = document.getElementById('auth-submit-btn');
   const authModalTitle = document.getElementById('auth-modal-title');
   const authError = document.getElementById('auth-error');
-  const toggleModeLink = document.getElementById('toggle-mode-link');
   const authSwitchMode = document.getElementById('auth-switch-mode');
 
-  // --- Data Fetching from Supabase ---
-  async function fetchGamesFromSupabase(isManual = false) {
+  // --- Live Data Fetching from ESPN ---
+  async function fetchLiveGames(isManual = false) {
     if (isManual) {
       refreshBtn.classList.add('spinning');
     }
 
     try {
-      const { data, error } = await supabaseClient
-        .from('games')
-        .select('*');
+      const response = await fetch(ESPN_NBA_URL);
+      if (!response.ok) throw new Error(`ESPN API Error: ${response.status}`);
+      const data = await response.json();
 
-      if (error) throw error;
+      const events = data.events || [];
+      currentGamesData = events.map(event => {
+        const comp = event.competitions[0];
+        const home = comp.competitors.find(c => c.homeAway === 'home');
+        const away = comp.competitors.find(c => c.homeAway === 'away');
 
-      currentGamesData = data || [];
+        const homeCode = normalizeCode(home.team.abbreviation);
+        const awayCode = normalizeCode(away.team.abbreviation);
+
+        const state = event.status.type.state; // 'pre', 'in', or 'post'
+        let status = 'UPCOMING';
+        if (state === 'in') status = 'LIVE';
+        if (state === 'post') status = 'FINAL';
+
+        return {
+          id: event.id,
+          home_team_code: homeCode,
+          home_team_name: home.team.displayName,
+          home_team_logo: TEAM_EMOJIS[homeCode] || '🏀',
+          away_team_code: awayCode,
+          away_team_name: away.team.displayName,
+          away_team_logo: TEAM_EMOJIS[awayCode] || '🏀',
+          home_score: parseInt(home.score || '0', 10),
+          away_score: parseInt(away.score || '0', 10),
+          status: status,
+          period: event.status.type.shortDetail,
+          start_time: event.status.type.shortDetail
+        };
+      });
+
       renderDashboard(currentGamesData);
 
       const now = new Date();
       lastUpdatedText.textContent = `Updated ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
       errorBanner.classList.add('hidden');
+      if (statusDot) statusDot.classList.add('live');
     } catch (err) {
-      console.warn("Supabase fetch warning:", err.message);
+      console.warn("Live score fetch warning:", err.message);
       errorBanner.classList.remove('hidden');
+      if (statusDot) statusDot.classList.remove('live');
     } finally {
       if (isManual) {
         setTimeout(() => refreshBtn.classList.remove('spinning'), 300);
       }
     }
-  }
-
-  // --- Supabase Realtime Subscription ---
-  function setupRealtimeSubscription() {
-    supabaseClient
-      .channel('public:games')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'games' }, () => {
-        fetchGamesFromSupabase(false);
-      })
-      .subscribe();
   }
 
   // --- Authentication Management ---
@@ -188,7 +262,9 @@
     }
 
     otherHeading.textContent = favoriteTeamCode ? "Other Games Today" : "Today's Scoreboard";
-    otherContainer.innerHTML = otherGames.map(game => renderGameCard(game, false)).join('');
+    otherContainer.innerHTML = otherGames.length > 0
+      ? otherGames.map(game => renderGameCard(game, false)).join('')
+      : `<div class="empty-spotlight"><span>No Other Games Scheduled Today</span></div>`;
   }
 
   // --- Event Listeners Setup ---
@@ -200,7 +276,7 @@
     });
 
     refreshBtn.addEventListener('click', () => {
-      fetchGamesFromSupabase(true);
+      fetchLiveGames(true);
     });
 
     // Auth Modal Triggers
@@ -216,15 +292,18 @@
       authModal.classList.add('hidden');
     });
 
-    toggleModeLink.addEventListener('click', (e) => {
-      e.preventDefault();
-      isSignUpMode = !isSignUpMode;
-      authModalTitle.textContent = isSignUpMode ? 'Create Account' : 'Welcome to PulseScores';
-      authSubmitBtn.textContent = isSignUpMode ? 'Sign Up' : 'Sign In';
-      authSwitchMode.innerHTML = isSignUpMode 
-        ? `Already have an account? <a href="#" id="toggle-mode-link">Sign In</a>`
-        : `Don't have an account? <a href="#" id="toggle-mode-link">Sign Up</a>`;
-      authError.classList.add('hidden');
+    // Event delegation so the Sign Up / Sign In toggle link keeps working after re-render
+    authSwitchMode.addEventListener('click', (e) => {
+      if (e.target && e.target.id === 'toggle-mode-link') {
+        e.preventDefault();
+        isSignUpMode = !isSignUpMode;
+        authModalTitle.textContent = isSignUpMode ? 'Create Account' : 'Welcome to PulseScores';
+        authSubmitBtn.textContent = isSignUpMode ? 'Sign Up' : 'Sign In';
+        authSwitchMode.innerHTML = isSignUpMode 
+          ? `Already have an account? <a href="#" id="toggle-mode-link">Sign In</a>`
+          : `Don't have an account? <a href="#" id="toggle-mode-link">Sign Up</a>`;
+        authError.classList.add('hidden');
+      }
     });
 
     authForm.addEventListener('submit', async (e) => {
@@ -267,8 +346,10 @@
     
     setupEventListeners();
     checkUserSession();
-    fetchGamesFromSupabase(false);
-    setupRealtimeSubscription();
+    fetchLiveGames(false);
+
+    // Automatically poll live scores every 30 seconds
+    setInterval(() => fetchLiveGames(false), 30000);
   }
 
   if (document.readyState === 'loading') {
