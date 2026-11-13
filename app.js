@@ -86,6 +86,7 @@
 
   // Auth DOM Elements
   const authModalBtn = document.getElementById('auth-modal-btn');
+  const logoutBtn = document.getElementById('logout-btn');
   const authModal = document.getElementById('auth-modal');
   const closeModalBtn = document.getElementById('close-modal-btn');
   const authForm = document.getElementById('auth-form');
@@ -212,12 +213,28 @@
 
   function handleUserSessionChange(user) {
     currentUser = user;
+
+    // Dynamically render or update user email badge next to the buttons
+    let userBadge = document.getElementById('user-status-badge');
+    if (!userBadge) {
+      userBadge = document.createElement('span');
+      userBadge.id = 'user-status-badge';
+      userBadge.style.cssText = 'font-size: 0.8rem; color: #10b981; font-weight: 600; background: rgba(16, 185, 129, 0.12); padding: 0.35rem 0.65rem; border-radius: 9999px; white-space: nowrap; margin-right: 0.5rem; display: inline-flex; align-items: center;';
+      authModalBtn.parentNode.insertBefore(userBadge, authModalBtn);
+    }
+
     if (user) {
-      authModalBtn.textContent = 'Sign Out';
+      const displayName = user.email ? user.email.split('@')[0] : 'Signed In';
+      userBadge.textContent = `● ${displayName}`;
+      userBadge.classList.remove('hidden');
+      authModalBtn.classList.add('hidden');
+      if (logoutBtn) logoutBtn.classList.remove('hidden');
       authModal.classList.add('hidden');
       loadUserFavoriteTeam(user.id);
     } else {
-      authModalBtn.textContent = 'Sign In';
+      userBadge.classList.add('hidden');
+      if (logoutBtn) logoutBtn.classList.add('hidden');
+      authModalBtn.classList.remove('hidden');
     }
   }
 
@@ -333,12 +350,14 @@
 
     // Auth Modal Triggers
     authModalBtn.addEventListener('click', () => {
-      if (currentUser) {
-        supabaseClient.auth.signOut();
-      } else {
-        authModal.classList.remove('hidden');
-      }
+      authModal.classList.remove('hidden');
     });
+
+    if (logoutBtn) {
+      logoutBtn.addEventListener('click', () => {
+        supabaseClient.auth.signOut();
+      });
+    }
 
     closeModalBtn.addEventListener('click', () => {
       authModal.classList.add('hidden');
