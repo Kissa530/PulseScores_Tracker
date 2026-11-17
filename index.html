@@ -107,7 +107,7 @@
 
   </main>
 
-  <!-- Login/Signup Modal -->
+ <!-- Login/Signup Modal -->
   <div id="auth-modal" class="auth-modal hidden">
     <div class="auth-modal-content">
       <button id="close-modal-btn" class="close-btn">&times;</button>
@@ -130,6 +130,29 @@
       <p class="auth-switch-text">
         <span id="auth-switch-mode">Don't have an account? <a href="#" id="toggle-mode-link">Sign Up</a></span>
       </p>
+    </div>
+  </div>
+
+  <!-- Box Score & Player Stats Modal -->
+  <div id="boxscore-modal" class="auth-modal hidden" role="dialog" aria-modal="true" aria-labelledby="boxscore-modal-title">
+    <div class="auth-modal-content boxscore-modal-content">
+      <button id="close-boxscore-btn" class="close-btn" aria-label="Close box score">&times;</button>
+      
+      <div class="boxscore-header">
+        <h3 id="boxscore-modal-title">Matchup Box Score</h3>
+        <p id="boxscore-subtitle" class="auth-subtitle">Click ⭐ next to a player to track them</p>
+      </div>
+
+      <!-- Team Switcher Tabs -->
+      <div id="boxscore-tabs" class="boxscore-tabs">
+        <button class="tab-btn active" data-team-index="0" id="tab-away">Away Team</button>
+        <button class="tab-btn" data-team-index="1" id="tab-home">Home Team</button>
+      </div>
+
+      <!-- Loading / Error / Stats Table Container -->
+      <div id="boxscore-body" class="boxscore-body">
+        <p class="loading-text">Loading player stats...</p>
+      </div>
     </div>
   </div>
 
