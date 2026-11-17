@@ -305,6 +305,7 @@ body {
   border-radius: var(--radius-lg);
   padding: 1.1rem;
   box-shadow: var(--shadow-card);
+  cursor: pointer;
   transition: transform var(--transition), background-color var(--transition), border-color var(--transition);
 }
 
@@ -312,6 +313,16 @@ body {
   transform: translateY(-2px);
   background-color: var(--bg-card-hover);
   border-color: rgba(255, 255, 255, 0.15);
+}
+
+.game-card-footer {
+  margin-top: 0.75rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border-subtle);
+  font-size: 0.75rem;
+  color: var(--accent-primary);
+  font-weight: 600;
+  text-align: right;
 }
 
 /* Spotlight Card Styling */
@@ -584,21 +595,6 @@ body {
   text-decoration: underline;
 }
 
-/* --- Interactive Game Card Pointer --- */
-.game-card {
-  cursor: pointer;
-}
-
-.game-card-footer {
-  margin-top: 0.75rem;
-  padding-top: 0.5rem;
-  border-top: 1px solid var(--border-subtle);
-  font-size: 0.75rem;
-  color: var(--accent-primary);
-  font-weight: 600;
-  text-align: right;
-}
-
 /* --- Box Score Modal & Table --- */
 .boxscore-modal-content {
   max-width: 720px;
@@ -726,8 +722,4 @@ body {
   text-align: center;
   color: var(--text-secondary);
   padding: 2rem 1rem;
-}
-
-.auth-switch-text a:hover {
-  text-decoration: underline;
 }
