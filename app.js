@@ -1,6 +1,6 @@
 /**
  * PulseScores - Live ESPN & Supabase Auth Tracker
- * Architecture: Live ESPN Scoreboard API, LocalStorage, Auto-Refresh, and Supabase Auth + Profile Sync.
+ * Architecture: Live ESPN Scoreboard & Summary APIs, LocalStorage, Auto-Refresh, and Supabase Auth + Profile Sync.
  */
 
 (function () {
@@ -11,8 +11,9 @@
   const SUPABASE_ANON_KEY = 'sb_publishable_y3nA3bEJt1VjirXJ2QWy-Q_XOzMkNrx';
   const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-  // --- Live ESPN API & Team Mapping ---
+  // --- Live ESPN APIs & Team Mapping ---
   const ESPN_NBA_URL = 'https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard';
+  const ESPN_SUMMARY_URL = 'https://site.api.espn.com/apis/site/v2/sports/basketball/nba/summary';
 
   const TEAM_EMOJIS = {
     ATL: '🦅', BOS: '☘️', BKN: '🗽', CHA: '🐝', CHI: '🐂',
@@ -39,8 +40,13 @@
 
   // --- Constants & State ---
   const STORAGE_KEY = 'pulsescores_favorite_team';
+  const PLAYERS_STORAGE_KEY = 'pulsescores_fav_players';
+
   let favoriteTeamCode = localStorage.getItem(STORAGE_KEY) || '';
+  let favoritePlayers = JSON.parse(localStorage.getItem(PLAYERS_STORAGE_KEY) || '[]');
   let currentGamesData = [];
+  let currentBoxScoreData = null;
+  let activeBoxScoreTeamIndex = 0;
   let currentUser = null;
   let isSignUpMode = false;
 
@@ -67,27 +73,45 @@
   const authError = document.getElementById('auth-error');
   const authSwitchMode = document.getElementById('auth-switch-mode');
 
+  // Box Score DOM Elements
+  const boxscoreModal = document.getElementById('boxscore-modal');
+  const closeBoxscoreBtn = document.getElementById('close-boxscore-btn');
+  const boxscoreModalTitle = document.getElementById('boxscore-modal-title');
+  const boxscoreBody = document.getElementById('boxscore-body');
+  const tabAway = document.getElementById('tab-away');
+  const tabHome = document.getElementById('tab-home');
+
   // --- Cloud Profile Sync (Supabase) ---
-  async function loadUserFavoriteTeam(userId) {
+  async function loadUserProfile(userId) {
     try {
       const { data, error } = await supabaseClient
         .from('profiles')
-        .select('favorite_team')
+        .select('favorite_team, favorite_players')
         .eq('id', userId)
         .maybeSingle();
 
       if (error) throw error;
 
-      if (data && data.favorite_team) {
-        favoriteTeamCode = data.favorite_team;
-        localStorage.setItem(STORAGE_KEY, favoriteTeamCode);
-        if (favoriteSelect) favoriteSelect.value = favoriteTeamCode;
+      if (data) {
+        if (data.favorite_team) {
+          favoriteTeamCode = data.favorite_team;
+          localStorage.setItem(STORAGE_KEY, favoriteTeamCode);
+          if (favoriteSelect) favoriteSelect.value = favoriteTeamCode;
+        } else if (favoriteTeamCode) {
+          await saveUserFavoriteTeam(favoriteTeamCode);
+        }
+
+        if (Array.isArray(data.favorite_players)) {
+          favoritePlayers = data.favorite_players;
+          localStorage.setItem(PLAYERS_STORAGE_KEY, JSON.stringify(favoritePlayers));
+        } else if (favoritePlayers.length > 0) {
+          await saveUserFavoritePlayers(favoritePlayers);
+        }
+
         renderDashboard(currentGamesData);
-      } else if (favoriteTeamCode) {
-        await saveUserFavoriteTeam(favoriteTeamCode);
       }
     } catch (err) {
-      console.warn('Could not load cloud favorite team:', err.message);
+      console.warn('Could not load cloud profile:', err.message);
     }
   }
 
@@ -101,6 +125,7 @@
           {
             id: currentUser.id,
             favorite_team: teamCode,
+            favorite_teams: teamCode ? [teamCode] : [],
             updated_at: new Date().toISOString()
           },
           { onConflict: 'id' }
@@ -109,6 +134,27 @@
       if (error) throw error;
     } catch (err) {
       console.warn('Could not sync favorite team to cloud:', err.message);
+    }
+  }
+
+  async function saveUserFavoritePlayers(playersList) {
+    if (!currentUser) return;
+
+    try {
+      const { error } = await supabaseClient
+        .from('profiles')
+        .upsert(
+          {
+            id: currentUser.id,
+            favorite_players: playersList,
+            updated_at: new Date().toISOString()
+          },
+          { onConflict: 'id' }
+        );
+
+      if (error) throw error;
+    } catch (err) {
+      console.warn('Could not sync favorite players to cloud:', err.message);
     }
   }
 
@@ -170,6 +216,141 @@
     }
   }
 
+  // --- Box Score & Player Stat Lines (Phase 2 & 3) ---
+  async function openBoxScoreModal(gameId, matchupTitle) {
+    if (!boxscoreModal) return;
+
+    boxscoreModalTitle.textContent = `${matchupTitle} — Box Score`;
+    boxscoreBody.innerHTML = `<p class="loading-text">Fetching player stat lines...</p>`;
+    boxscoreModal.classList.remove('hidden');
+
+    try {
+      const response = await fetch(`${ESPN_SUMMARY_URL}?event=${gameId}`);
+      if (!response.ok) throw new Error('Failed to load game summary');
+
+      const data = await response.json();
+      const playersData = data?.boxscore?.players;
+
+      if (!playersData || playersData.length < 2) {
+        boxscoreBody.innerHTML = `<p class="loading-text">Player stats are not available yet for this game.</p>`;
+        return;
+      }
+
+      currentBoxScoreData = playersData;
+      activeBoxScoreTeamIndex = 0;
+
+      if (tabAway && tabHome) {
+        tabAway.textContent = playersData[0].team.displayName;
+        tabHome.textContent = playersData[1].team.displayName;
+        tabAway.classList.add('active');
+        tabHome.classList.remove('active');
+      }
+
+      renderBoxScoreTable(0);
+    } catch (err) {
+      console.error('Box score error:', err);
+      boxscoreBody.innerHTML = `<p class="loading-text">Unable to load box score right now.</p>`;
+    }
+  }
+
+  function renderBoxScoreTable(teamIndex) {
+    const teamStats = currentBoxScoreData?.[teamIndex]?.statistics?.[0];
+
+    if (!teamStats || !teamStats.athletes || teamStats.athletes.length === 0) {
+      boxscoreBody.innerHTML = `<p class="loading-text">No player statistics recorded yet.</p>`;
+      return;
+    }
+
+    const labels = teamStats.labels || [];
+    const athletes = teamStats.athletes;
+
+    const displayCols = [
+      { label: 'MIN', idx: labels.indexOf('MIN') },
+      { label: 'PTS', idx: labels.indexOf('PTS') },
+      { label: 'REB', idx: labels.indexOf('REB') },
+      { label: 'AST', idx: labels.indexOf('AST') },
+      { label: 'FG', idx: labels.indexOf('FG') },
+      { label: '3PT', idx: labels.indexOf('3PT') },
+      { label: '+/-', idx: labels.indexOf('+/-') }
+    ].filter(col => col.idx !== -1);
+
+    let html = `
+      <div class="stats-table-wrapper">
+        <table class="stats-table">
+          <thead>
+            <tr>
+              <th>Player</th>
+              ${displayCols.map(c => `<th>${c.label}</th>`).join('')}
+            </tr>
+          </thead>
+          <tbody>
+    `;
+
+    athletes.forEach(entry => {
+      const athlete = entry.athlete;
+      const stats = entry.stats || [];
+      const isFollowed = favoritePlayers.some(p => p.id === athlete.id);
+      const starIcon = isFollowed ? '⭐' : '☆';
+      const safeName = (athlete.displayName || '').replace(/"/g, '&quot;');
+
+      if (entry.didNotPlay || stats.length === 0) {
+        html += `
+          <tr class="${isFollowed ? 'followed-player' : ''}">
+            <td>
+              <div class="player-cell">
+                <button class="star-player-btn" data-id="${athlete.id}" data-name="${safeName}" title="Track Player">${starIcon}</button>
+                <span>${athlete.shortName || athlete.displayName}</span>
+                <span class="player-pos">${athlete.position?.abbreviation || ''}</span>
+              </div>
+            </td>
+            <td colspan="${displayCols.length}" style="text-align: center; color: var(--text-muted);">DNP - ${entry.reason || 'Coach Decision'}</td>
+          </tr>
+        `;
+        return;
+      }
+
+      html += `
+        <tr class="${isFollowed ? 'followed-player' : ''}">
+          <td>
+            <div class="player-cell">
+              <button class="star-player-btn" data-id="${athlete.id}" data-name="${safeName}" title="Track Player">${starIcon}</button>
+              <span>${athlete.shortName || athlete.displayName}</span>
+              <span class="player-pos">${athlete.position?.abbreviation || ''}</span>
+            </div>
+          </td>
+          ${displayCols.map(c => `<td>${stats[c.idx] ?? '-'}</td>`).join('')}
+        </tr>
+      `;
+    });
+
+    html += `</tbody></table></div>`;
+    boxscoreBody.innerHTML = html;
+
+    boxscoreBody.querySelectorAll('.star-player-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleFavoritePlayer(btn.dataset.id, btn.dataset.name);
+      });
+    });
+  }
+
+  async function toggleFavoritePlayer(playerId, playerName) {
+    const exists = favoritePlayers.some(p => p.id === playerId);
+
+    if (exists) {
+      favoritePlayers = favoritePlayers.filter(p => p.id !== playerId);
+    } else {
+      favoritePlayers.push({ id: playerId, name: playerName });
+    }
+
+    localStorage.setItem(PLAYERS_STORAGE_KEY, JSON.stringify(favoritePlayers));
+    renderBoxScoreTable(activeBoxScoreTeamIndex);
+
+    if (currentUser) {
+      await saveUserFavoritePlayers(favoritePlayers);
+    }
+  }
+
   // --- Authentication Management ---
   async function checkUserSession() {
     const { data: { session } } = await supabaseClient.auth.getSession();
@@ -198,7 +379,7 @@
       authModalBtn.classList.add('hidden');
       if (logoutBtn) logoutBtn.classList.remove('hidden');
       authModal.classList.add('hidden');
-      loadUserFavoriteTeam(user.id);
+      loadUserProfile(user.id);
     } else {
       userBadge.classList.add('hidden');
       if (logoutBtn) logoutBtn.classList.add('hidden');
@@ -215,9 +396,10 @@
 
     const homeWinner = isFinal && game.home_score > game.away_score;
     const awayWinner = isFinal && game.away_score > game.home_score;
+    const matchupTitle = `${game.away_team_code} @ ${game.home_team_code}`;
 
     return `
-      <article class="game-card ${isSpotlight ? 'spotlight' : ''}">
+      <article class="game-card ${isSpotlight ? 'spotlight' : ''}" data-game-id="${game.id}" data-matchup="${matchupTitle}">
         ${isSpotlight ? '<div class="spotlight-badge">⭐ Favorite</div>' : ''}
         
         <div class="game-header">
@@ -252,6 +434,8 @@
             </span>
           </div>
         </div>
+
+        <div class="game-card-footer">View Box Score &amp; Stats &rarr;</div>
       </article>
     `;
   }
@@ -316,6 +500,39 @@
       fetchLiveGames(true);
     });
 
+    // Event delegation for clicking any game card to open its Box Score
+    document.addEventListener('click', (e) => {
+      const card = e.target.closest('.game-card');
+      if (card && card.dataset.gameId) {
+        openBoxScoreModal(card.dataset.gameId, card.dataset.matchup);
+      }
+    });
+
+    // Box Score Modal Controls
+    if (closeBoxscoreBtn) {
+      closeBoxscoreBtn.addEventListener('click', () => {
+        boxscoreModal.classList.add('hidden');
+      });
+    }
+
+    if (boxscoreModal) {
+      boxscoreModal.addEventListener('click', (e) => {
+        if (e.target === boxscoreModal) {
+          boxscoreModal.classList.add('hidden');
+        }
+      });
+    }
+
+    document.querySelectorAll('.tab-btn').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.tab-btn').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        activeBoxScoreTeamIndex = Number(tab.dataset.teamIndex);
+        renderBoxScoreTable(activeBoxScoreTeamIndex);
+      });
+    });
+
+    // Auth Modal Controls
     authModalBtn.addEventListener('click', () => {
       authModal.classList.remove('hidden');
     });
@@ -395,7 +612,6 @@
   }
 
 })();
-
 
 
 
