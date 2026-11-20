@@ -1,13 +1,15 @@
 /**
- * PulseScores - Live ESPN & Supabase Auth Tracker
- * Architecture: 7-Day ESPN Scoreboard & Summary APIs, 3:00 PM Last-Night Rollover, LocalStorage, Auto-Refresh, and Supabase Auth + Profile Sync.
+ * PulseScores - Live ESPN & Supabase Auth Tracker (Phase 1 + Phase 2)
+ * Architecture: 7-Day ESPN Scoreboard & Summary APIs, 3:00 PM Last-Night Rollover,
+ * LocalStorage, Auto-Refresh, Status/Slate Filtering, Linescores, Stat Milestones,
+ * Pre-Game Injuries, and Supabase Auth + Profile Sync.
  */
 
 (function () {
   'use strict';
 
   // --- Supabase Configuration ---
-  const SUPABASE_URL = 'https://dmaoawahyxtprjmcwgvd.supabase.co'; 
+  const SUPABASE_URL = 'https://dmaoawahyxtprjmcwgvd.supabase.co';
   const SUPABASE_ANON_KEY = 'sb_publishable_y3nA3bEJt1VjirXJ2QWy-Q_XOzMkNrx';
   const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -15,14 +17,14 @@
   const ESPN_NBA_URL = 'https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard';
   const ESPN_SUMMARY_URL = 'https://site.api.espn.com/apis/site/v2/sports/basketball/nba/summary';
 
-const TEAM_EMOJIS = {
-  ATL: '🦅', BOS: '☘️', BKN: '🥅', CHA: '🐝', CHI: '🐂',
-  CLE: '⚔️', DAL: '🐴', DEN: '⛏️', DET: '⚙️', GSW: '🌉',
-  HOU: '🚀', IND: '🏎️', LAC: '⛵', LAL: '💜', MEM: '🐻',
-  MIA: '🔥', MIL: '🦌', MIN: '🐺', NOP: '⚜️', NYK: '🗽',
-  OKC: '⚡', ORL: '✨', PHI: '🔔', PHX: '☀️', POR: '🌹',
-  SAC: '👑', SAS: '🤠', TOR: '🦖', UTA: '🎷', WAS: '🏛️'
-};
+  const TEAM_EMOJIS = {
+    ATL: '🦅', BOS: '☘️', BKN: '🥅', CHA: '🐝', CHI: '🐂',
+    CLE: '⚔️', DAL: '🐴', DEN: '⛏️', DET: '⚙️', GSW: '🌉',
+    HOU: '🚀', IND: '🏎️', LAC: '⛵', LAL: '💜', MEM: '🐻',
+    MIA: '🔥', MIL: '🦌', MIN: '🐺', NOP: '⚜️', NYK: '🗽',
+    OKC: '⚡', ORL: '✨', PHI: '🔔', PHX: '☀️', POR: '🌹',
+    SAC: '👑', SAS: '🤠', TOR: '🦖', UTA: '🎷', WAS: '🏛️'
+  };
 
   const CODE_MAP = {
     ATL: 'ATL', BOS: 'BOS', BKN: 'BKN', CHA: 'CHA', CHI: 'CHI',
@@ -45,13 +47,19 @@ const TEAM_EMOJIS = {
   let favoriteTeamCode = localStorage.getItem(STORAGE_KEY) || '';
   let favoritePlayers = JSON.parse(localStorage.getItem(PLAYERS_STORAGE_KEY) || '[]');
   let currentGamesData = [];
+  let currentSummaryData = null;
   let currentBoxScoreData = null;
   let activeBoxScoreTeamIndex = 0;
   let currentUser = null;
   let isSignUpMode = false;
 
+  // Phase 1 Filter State
+  let activeStatusFilter = 'ALL'; // ALL | LIVE | FINAL | UPCOMING
+  let activeSlateFilter = 'ALL';  // ALL | TODAY | YESTERDAY | UPCOMING
+
   // --- DOM Elements Cache ---
   const favoriteSelect = document.getElementById('favorite-select');
+  const favoriteSection = document.getElementById('favorite-section');
   const favoriteContainer = document.getElementById('favorite-game-container');
   const otherContainer = document.getElementById('other-games-container');
   const otherHeading = document.getElementById('other-games-heading');
@@ -80,6 +88,130 @@ const TEAM_EMOJIS = {
   const boxscoreBody = document.getElementById('boxscore-body');
   const tabAway = document.getElementById('tab-away');
   const tabHome = document.getElementById('tab-home');
+
+  // --- Phase 1 Metadata Extraction Helpers ---
+  function getTeamRecord(competitor) {
+    const overall = competitor?.records?.find(r => r.type === 'total' || r.name === 'overall');
+    return overall?.summary || '';
+  }
+
+  function getBroadcastLabel(comp) {
+    const names = (comp?.broadcasts || [])
+      .flatMap(b => b.names || [])
+      .filter(Boolean);
+    return names[0] || '';
+  }
+
+  function isClutchGame(statusObj, homeScore, awayScore) {
+    const state = statusObj?.type?.state;
+    const period = Number(statusObj?.period || 0);
+    const diff = Math.abs(homeScore - awayScore);
+    return state === 'in' && period >= 4 && diff <= 5;
+  }
+
+  // --- Phase 2 Stat & Linescore Helpers ---
+  function getDoubleDoubleBadge(pts, reb, ast, stl, blk) {
+    const doubleCats = [pts, reb, ast, stl, blk].filter(n => n >= 10).length;
+    if (doubleCats >= 3) {
+      return `<span class="milestone-badge td">TD</span>`;
+    }
+    if (doubleCats >= 2) {
+      return `<span class="milestone-badge dd">DD</span>`;
+    }
+    return '';
+  }
+
+  function renderLinescoreHtml(summaryData) {
+    const headerComp = summaryData?.header?.competitions?.[0];
+    const competitors = headerComp?.competitors || [];
+    if (competitors.length < 2) return '';
+
+    const away = competitors.find(c => c.homeAway === 'away') || competitors[0];
+    const home = competitors.find(c => c.homeAway === 'home') || competitors[1];
+
+    const awayLines = away.linescores || [];
+    const homeLines = home.linescores || [];
+    const periodCount = Math.max(4, awayLines.length, homeLines.length);
+
+    const periodHeaders = Array.from({ length: periodCount }, (_, i) =>
+      i < 4 ? `Q${i + 1}` : `OT${periodCount > 5 ? i - 3 : ''}`
+    );
+
+    const buildRow = (team) => {
+      const code = normalizeCode(team.team?.abbreviation || '');
+      const emoji = TEAM_EMOJIS[code] || '🏀';
+      const lines = team.linescores || [];
+      const cells = Array.from({ length: periodCount }, (_, idx) => {
+        const val = lines[idx]?.value;
+        return `<td>${val !== undefined ? val : '-'}</td>`;
+      }).join('');
+
+      return `
+        <tr>
+          <td>${emoji} ${code}</td>
+          ${cells}
+          <td class="linescore-total">${team.score ?? '-'}</td>
+        </tr>
+      `;
+    };
+
+    return `
+      <div class="linescore-card">
+        <table class="linescore-table">
+          <thead>
+            <tr>
+              <th>Team</th>
+              ${periodHeaders.map(h => `<th>${h}</th>`).join('')}
+              <th>T</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${buildRow(away)}
+            ${buildRow(home)}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  function renderPreGameSummaryHtml(summaryData) {
+    const injuries = summaryData?.injuries || [];
+    if (!injuries.length) {
+      return `<p class="loading-text">Pre-game matchup — no injury report entries listed yet.</p>`;
+    }
+
+    return `
+      <div class="pregame-grid">
+        ${injuries
+          .map(teamGroup => {
+            const teamName = teamGroup.team?.displayName || 'Team';
+            const items = teamGroup.injuries || [];
+            const listHtml = items.length
+              ? items
+                  .map(inj => {
+                    const playerName = inj.athlete?.displayName || 'Player';
+                    const statusText = inj.status || inj.type?.description || 'Questionable';
+                    return `
+                      <div class="injury-item">
+                        <span>${playerName}</span>
+                        <span class="injury-status">${statusText}</span>
+                      </div>
+                    `;
+                  })
+                  .join('')
+              : `<div class="injury-item"><span>No reported injuries</span></div>`;
+
+            return `
+              <div class="pregame-card">
+                <h4>${teamName} Injury Report</h4>
+                ${listHtml}
+              </div>
+            `;
+          })
+          .join('')}
+      </div>
+    `;
+  }
 
   // --- Cloud Profile Sync (Supabase) ---
   async function loadUserProfile(userId) {
@@ -237,6 +369,9 @@ const TEAM_EMOJIS = {
           if (state === 'in') status = 'LIVE';
           if (state === 'post') status = 'FINAL';
 
+          const homeScore = parseInt(home.score || '0', 10);
+          const awayScore = parseInt(away.score || '0', 10);
+
           const gameDate = new Date(event.date);
           const dateLabel = gameDate.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
 
@@ -249,11 +384,15 @@ const TEAM_EMOJIS = {
             home_team_code: homeCode,
             home_team_name: home.team.displayName,
             home_team_logo: TEAM_EMOJIS[homeCode] || '🏀',
+            home_record: getTeamRecord(home),
             away_team_code: awayCode,
             away_team_name: away.team.displayName,
             away_team_logo: TEAM_EMOJIS[awayCode] || '🏀',
-            home_score: parseInt(home.score || '0', 10),
-            away_score: parseInt(away.score || '0', 10),
+            away_record: getTeamRecord(away),
+            home_score: homeScore,
+            away_score: awayScore,
+            broadcast: getBroadcastLabel(comp),
+            is_clutch: isClutchGame(event.status, homeScore, awayScore),
             status: status,
             period: event.status.type.shortDetail,
             start_time: event.status.type.shortDetail
@@ -281,12 +420,12 @@ const TEAM_EMOJIS = {
     }
   }
 
-  // --- Box Score & Player Stat Lines ---
+  // --- Box Score & Player Stat Lines (Phase 2 Enhanced) ---
   async function openBoxScoreModal(gameId, matchupTitle) {
     if (!boxscoreModal) return;
 
     boxscoreModalTitle.textContent = `${matchupTitle} — Box Score`;
-    boxscoreBody.innerHTML = `<p class="loading-text">Fetching player stat lines...</p>`;
+    boxscoreBody.innerHTML = `<p class="loading-text">Fetching game details...</p>`;
     boxscoreModal.classList.remove('hidden');
 
     try {
@@ -294,10 +433,11 @@ const TEAM_EMOJIS = {
       if (!response.ok) throw new Error('Failed to load game summary');
 
       const data = await response.json();
+      currentSummaryData = data;
       const playersData = data?.boxscore?.players;
 
       if (!playersData || playersData.length < 2) {
-        boxscoreBody.innerHTML = `<p class="loading-text">Player stats are not available yet for this game.</p>`;
+        boxscoreBody.innerHTML = renderPreGameSummaryHtml(data);
         return;
       }
 
@@ -320,26 +460,52 @@ const TEAM_EMOJIS = {
 
   function renderBoxScoreTable(teamIndex) {
     const teamStats = currentBoxScoreData?.[teamIndex]?.statistics?.[0];
+    const linescoreHtml = renderLinescoreHtml(currentSummaryData);
 
     if (!teamStats || !teamStats.athletes || teamStats.athletes.length === 0) {
-      boxscoreBody.innerHTML = `<p class="loading-text">No player statistics recorded yet.</p>`;
+      boxscoreBody.innerHTML = `${linescoreHtml}${renderPreGameSummaryHtml(currentSummaryData)}`;
       return;
     }
 
     const labels = teamStats.labels || [];
     const athletes = teamStats.athletes;
 
+    const ptsIdx = labels.indexOf('PTS');
+    const rebIdx = labels.indexOf('REB');
+    const astIdx = labels.indexOf('AST');
+    const stlIdx = labels.indexOf('STL');
+    const blkIdx = labels.indexOf('BLK');
+
+    const parseNum = (stats, idx) => {
+      if (idx === -1 || !stats || stats[idx] === undefined) return 0;
+      const n = parseFloat(String(stats[idx]).replace(/[^\d.-]/g, ''));
+      return Number.isNaN(n) ? 0 : n;
+    };
+
+    // Identify team leaders in PTS, REB, AST
+    let topPtsVal = -1;
+    let topRebVal = -1;
+    let topAstVal = -1;
+
+    athletes.forEach(entry => {
+      if (entry.didNotPlay || !entry.stats?.length) return;
+      topPtsVal = Math.max(topPtsVal, parseNum(entry.stats, ptsIdx));
+      topRebVal = Math.max(topRebVal, parseNum(entry.stats, rebIdx));
+      topAstVal = Math.max(topAstVal, parseNum(entry.stats, astIdx));
+    });
+
     const displayCols = [
       { label: 'MIN', idx: labels.indexOf('MIN') },
-      { label: 'PTS', idx: labels.indexOf('PTS') },
-      { label: 'REB', idx: labels.indexOf('REB') },
-      { label: 'AST', idx: labels.indexOf('AST') },
+      { label: 'PTS', idx: ptsIdx },
+      { label: 'REB', idx: rebIdx },
+      { label: 'AST', idx: astIdx },
       { label: 'FG', idx: labels.indexOf('FG') },
       { label: '3PT', idx: labels.indexOf('3PT') },
       { label: '+/-', idx: labels.indexOf('+/-') }
     ].filter(col => col.idx !== -1);
 
     let html = `
+      ${linescoreHtml}
       <div class="stats-table-wrapper">
         <table class="stats-table">
           <thead>
@@ -374,6 +540,19 @@ const TEAM_EMOJIS = {
         return;
       }
 
+      const pts = parseNum(stats, ptsIdx);
+      const reb = parseNum(stats, rebIdx);
+      const ast = parseNum(stats, astIdx);
+      const stl = parseNum(stats, stlIdx);
+      const blk = parseNum(stats, blkIdx);
+
+      const milestoneBadge = getDoubleDoubleBadge(pts, reb, ast, stl, blk);
+      const leaderTags = [
+        pts > 0 && pts === topPtsVal ? `<span class="leader-tag">PTS</span>` : '',
+        reb > 0 && reb === topRebVal ? `<span class="leader-tag">REB</span>` : '',
+        ast > 0 && ast === topAstVal ? `<span class="leader-tag">AST</span>` : ''
+      ].join('');
+
       html += `
         <tr class="${isFollowed ? 'followed-player' : ''}">
           <td>
@@ -381,6 +560,8 @@ const TEAM_EMOJIS = {
               <button class="star-player-btn" data-id="${athlete.id}" data-name="${safeName}" title="Track Player">${starIcon}</button>
               <span>${athlete.shortName || athlete.displayName}</span>
               <span class="player-pos">${athlete.position?.abbreviation || ''}</span>
+              ${milestoneBadge}
+              ${leaderTags}
             </div>
           </td>
           ${displayCols.map(c => `<td>${stats[c.idx] ?? '-'}</td>`).join('')}
@@ -454,6 +635,62 @@ const TEAM_EMOJIS = {
     }
   }
 
+  // --- Phase 1 Filter Bar Renderer ---
+  function renderFilterBar() {
+    if (!favoriteSection || !favoriteSection.parentNode) return;
+
+    let filterBar = document.getElementById('scoreboard-filter-bar');
+    if (!filterBar) {
+      filterBar = document.createElement('div');
+      filterBar.id = 'scoreboard-filter-bar';
+      filterBar.className = 'filter-bar';
+      favoriteSection.parentNode.insertBefore(filterBar, favoriteSection);
+    }
+
+    const statusOptions = [
+      { key: 'ALL', label: 'All' },
+      { key: 'LIVE', label: 'Live' },
+      { key: 'UPCOMING', label: 'Upcoming' },
+      { key: 'FINAL', label: 'Final' }
+    ];
+
+    const slateOptions = [
+      { key: 'ALL', label: 'Full Week' },
+      { key: 'TODAY', label: 'Today' },
+      { key: 'YESTERDAY', label: 'Yesterday' },
+      { key: 'UPCOMING', label: 'Next 3 Days' }
+    ];
+
+    filterBar.innerHTML = `
+      <div class="filter-group" role="group" aria-label="Filter by status">
+        <span class="filter-label">Status</span>
+        ${statusOptions
+          .map(
+            opt => `<button type="button" class="filter-pill ${activeStatusFilter === opt.key ? 'active' : ''}" data-filter-type="status" data-filter-val="${opt.key}">${opt.label}</button>`
+          )
+          .join('')}
+      </div>
+      <div class="filter-group" role="group" aria-label="Filter by slate">
+        <span class="filter-label">Slate</span>
+        ${slateOptions
+          .map(
+            opt => `<button type="button" class="filter-pill ${activeSlateFilter === opt.key ? 'active' : ''}" data-filter-type="slate" data-filter-val="${opt.key}">${opt.label}</button>`
+          )
+          .join('')}
+      </div>
+    `;
+
+    filterBar.querySelectorAll('.filter-pill').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const type = btn.dataset.filterType;
+        const val = btn.dataset.filterVal;
+        if (type === 'status') activeStatusFilter = val;
+        if (type === 'slate') activeSlateFilter = val;
+        renderDashboard(currentGamesData);
+      });
+    });
+  }
+
   // --- Rendering Functions ---
   function renderGameCard(game, isSpotlight = false, badgeOverride = '') {
     const isHomeFav = game.home_team_code === favoriteTeamCode;
@@ -467,14 +704,25 @@ const TEAM_EMOJIS = {
     const displayPeriod = game.dateGroup !== 'today' ? `${game.dateLabel} • ${game.period}` : game.period;
     const badgeLabel = badgeOverride || '⭐ Favorite';
 
+    const clutchBadge = game.is_clutch
+      ? `<span class="game-status-badge clutch">🔥 CLUTCH</span>`
+      : '';
+    const broadcastBadge = game.broadcast
+      ? `<span class="broadcast-pill">${game.broadcast}</span>`
+      : '';
+
     return `
       <article class="game-card ${isSpotlight ? 'spotlight' : ''}" data-game-id="${game.id}" data-matchup="${matchupTitle}">
         ${isSpotlight ? `<div class="spotlight-badge">${badgeLabel}</div>` : ''}
         
         <div class="game-header">
-          <span class="game-status-badge ${game.status.toLowerCase()}">
-            ${isLive ? '● LIVE' : game.status}
-          </span>
+          <div class="header-badges">
+            <span class="game-status-badge ${game.status.toLowerCase()}">
+              ${isLive ? '● LIVE' : game.status}
+            </span>
+            ${clutchBadge}
+            ${broadcastBadge}
+          </div>
           <span class="game-time-info">${displayPeriod}</span>
         </div>
 
@@ -482,9 +730,12 @@ const TEAM_EMOJIS = {
           <div class="team-row">
             <div class="team-info">
               <span class="team-logo">${game.home_team_logo}</span>
-              <span class="team-name ${isHomeFav ? 'is-favorite' : ''}">
-                ${game.home_team_name}
-              </span>
+              <div class="team-meta">
+                <span class="team-name ${isHomeFav ? 'is-favorite' : ''}">
+                  ${game.home_team_name}
+                </span>
+                ${game.home_record ? `<span class="team-record">${game.home_record}</span>` : ''}
+              </div>
             </div>
             <span class="team-score ${isFinal ? (homeWinner ? 'winner' : 'loser') : ''}">
               ${game.status === 'UPCOMING' ? '-' : game.home_score}
@@ -494,9 +745,12 @@ const TEAM_EMOJIS = {
           <div class="team-row">
             <div class="team-info">
               <span class="team-logo">${game.away_team_logo}</span>
-              <span class="team-name ${isAwayFav ? 'is-favorite' : ''}">
-                ${game.away_team_name}
-              </span>
+              <div class="team-meta">
+                <span class="team-name ${isAwayFav ? 'is-favorite' : ''}">
+                  ${game.away_team_name}
+                </span>
+                ${game.away_record ? `<span class="team-record">${game.away_record}</span>` : ''}
+              </div>
             </div>
             <span class="team-score ${isFinal ? (awayWinner ? 'winner' : 'loser') : ''}">
               ${game.status === 'UPCOMING' ? '-' : game.away_score}
@@ -512,13 +766,24 @@ const TEAM_EMOJIS = {
   function renderDashboard(games) {
     if (!games) return;
 
-    const showLastNight = isBeforeThreePM();
-    const todayGames = games.filter(g => g.dateGroup === 'today');
-    const yesterdayGames = games.filter(g => g.dateGroup === 'yesterday');
-    const olderPastGames = games.filter(g => g.dateGroup === 'past');
-    const upcomingGames = games.filter(g => g.dateGroup === 'upcoming');
+    renderFilterBar();
 
-    // Before 3:00 PM, highlight last night's games separately; after 3:00 PM, roll them into Recent Results
+    const filteredGames = games.filter(game => {
+      const matchesStatus = activeStatusFilter === 'ALL' || game.status === activeStatusFilter;
+      const matchesSlate =
+        activeSlateFilter === 'ALL' ||
+        (activeSlateFilter === 'TODAY' && game.dateGroup === 'today') ||
+        (activeSlateFilter === 'YESTERDAY' && game.dateGroup === 'yesterday') ||
+        (activeSlateFilter === 'UPCOMING' && game.dateGroup === 'upcoming');
+      return matchesStatus && matchesSlate;
+    });
+
+    const showLastNight = isBeforeThreePM();
+    const todayGames = filteredGames.filter(g => g.dateGroup === 'today');
+    const yesterdayGames = filteredGames.filter(g => g.dateGroup === 'yesterday');
+    const olderPastGames = filteredGames.filter(g => g.dateGroup === 'past');
+    const upcomingGames = filteredGames.filter(g => g.dateGroup === 'upcoming');
+
     const lastNightGames = showLastNight ? yesterdayGames : [];
     const recentPastGames = showLastNight ? olderPastGames : [...olderPastGames, ...yesterdayGames];
 
@@ -531,7 +796,6 @@ const TEAM_EMOJIS = {
         g => g.home_team_code === favoriteTeamCode || g.away_team_code === favoriteTeamCode
       );
 
-      // If favorite team isn't playing today and it's before 3:00 PM, spotlight their result from last night
       if (!favoriteGame && showLastNight) {
         favoriteGame = yesterdayGames.find(
           g => g.home_team_code === favoriteTeamCode || g.away_team_code === favoriteTeamCode
@@ -554,8 +818,8 @@ const TEAM_EMOJIS = {
         } else {
           favoriteContainer.innerHTML = `
             <div class="empty-spotlight">
-              <span>No Game Today</span>
-              Your team is off today. Check out the rest of the week's slate below!
+              <span>No Matching Game Today</span>
+              Your team either has the day off or is hidden by the active filter.
             </div>
           `;
         }
@@ -575,7 +839,7 @@ const TEAM_EMOJIS = {
     if (otherContainer) {
       otherContainer.innerHTML = otherTodayGames.length > 0
         ? otherTodayGames.map(game => renderGameCard(game, false)).join('')
-        : `<div class="empty-spotlight"><span>No Other Games Scheduled Today</span></div>`;
+        : `<div class="empty-spotlight"><span>No Other Games Matching Filter Today</span></div>`;
     }
 
     let weekSection = document.getElementById('full-week-section');
@@ -641,11 +905,11 @@ const TEAM_EMOJIS = {
       favoriteSelect.addEventListener('change', (e) => {
         favoriteTeamCode = e.target.value;
         localStorage.setItem(STORAGE_KEY, favoriteTeamCode);
-        
+
         if (currentUser) {
           saveUserFavoriteTeam(favoriteTeamCode);
         }
-        
+
         renderDashboard(currentGamesData);
       });
     }
@@ -656,7 +920,6 @@ const TEAM_EMOJIS = {
       });
     }
 
-    // Event delegation for clicking any game card to open its Box Score
     document.addEventListener('click', (e) => {
       const card = e.target.closest('.game-card');
       if (card && card.dataset.gameId) {
@@ -664,7 +927,6 @@ const TEAM_EMOJIS = {
       }
     });
 
-    // Box Score Modal Controls
     if (closeBoxscoreBtn) {
       closeBoxscoreBtn.addEventListener('click', () => {
         boxscoreModal.classList.add('hidden');
@@ -688,7 +950,6 @@ const TEAM_EMOJIS = {
       });
     });
 
-    // Auth Modal Controls
     if (authModalBtn) {
       authModalBtn.addEventListener('click', () => {
         if (authModal) authModal.classList.remove('hidden');
@@ -718,7 +979,7 @@ const TEAM_EMOJIS = {
           if (authSubmitBtn) {
             authSubmitBtn.textContent = isSignUpMode ? 'Sign Up' : 'Sign In';
           }
-          authSwitchMode.innerHTML = isSignUpMode 
+          authSwitchMode.innerHTML = isSignUpMode
             ? `Already have an account? <a href="#" id="toggle-mode-link">Sign In</a>`
             : `Don't have an account? <a href="#" id="toggle-mode-link">Sign Up</a>`;
           if (authError) authError.classList.add('hidden');
@@ -767,7 +1028,7 @@ const TEAM_EMOJIS = {
     if (favoriteTeamCode && favoriteSelect) {
       favoriteSelect.value = favoriteTeamCode;
     }
-    
+
     setupEventListeners();
     checkUserSession();
     fetchLiveGames(false);
