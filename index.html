@@ -6,7 +6,7 @@
   <title>PulseScores - Team Tracker</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -18,7 +18,7 @@
         <span class="logo-icon">⚡</span>
         <h1 class="app-title">PulseScores</h1>
       </div>
-      
+
       <div class="header-actions">
         <!-- Favorite Team Selector (All 30 NBA Teams) -->
         <div class="favorite-picker-wrapper">
@@ -59,9 +59,9 @@
         </div>
 
         <!-- Auth Controls Container (Sign In, Dynamic Email Badge, and Sign Out) -->
-        <div class="auth-controls" style="display: flex; align-items: center; gap: 0.5rem;">
-          <button id="auth-modal-btn" class="auth-btn">Sign In</button>
-          <button id="logout-btn" class="auth-btn logout-btn hidden" style="background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3);">Sign Out</button>
+        <div class="auth-controls">
+          <button type="button" id="auth-modal-btn" class="auth-btn">Sign In</button>
+          <button type="button" id="logout-btn" class="auth-btn logout-btn hidden">Sign Out</button>
         </div>
       </div>
     </div>
@@ -69,14 +69,14 @@
 
   <!-- Main Content Dashboard -->
   <main class="main-layout">
-    
+
     <!-- Status & Info Bar -->
     <div class="info-bar">
       <div class="update-status" id="update-status" aria-live="polite">
         <span class="status-indicator live" id="status-dot"></span>
         <span id="last-updated-text">Connecting to Supabase...</span>
       </div>
-      <button id="manual-refresh-btn" class="refresh-button" aria-label="Refresh scores">
+      <button type="button" id="manual-refresh-btn" class="refresh-button" aria-label="Refresh scores">
         <svg class="refresh-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
           <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
         </svg>
@@ -107,13 +107,13 @@
 
   </main>
 
- <!-- Login/Signup Modal -->
-  <div id="auth-modal" class="auth-modal hidden">
+  <!-- Login/Signup Modal -->
+  <div id="auth-modal" class="auth-modal hidden" role="dialog" aria-modal="true" aria-labelledby="auth-modal-title">
     <div class="auth-modal-content">
-      <button id="close-modal-btn" class="close-btn">&times;</button>
+      <button type="button" id="close-modal-btn" class="close-btn" aria-label="Close sign in modal">&times;</button>
       <h3 id="auth-modal-title">Welcome to PulseScores</h3>
       <p class="auth-subtitle">Sign in to sync your favorite team across devices.</p>
-      
+
       <form id="auth-form">
         <div class="form-group">
           <label for="auth-email">Email</label>
@@ -126,7 +126,7 @@
         <div id="auth-error" class="auth-error hidden"></div>
         <button type="submit" id="auth-submit-btn" class="primary-btn">Sign In</button>
       </form>
-      
+
       <p class="auth-switch-text">
         <span id="auth-switch-mode">Don't have an account? <a href="#" id="toggle-mode-link">Sign Up</a></span>
       </p>
@@ -136,8 +136,8 @@
   <!-- Box Score & Player Stats Modal -->
   <div id="boxscore-modal" class="auth-modal hidden" role="dialog" aria-modal="true" aria-labelledby="boxscore-modal-title">
     <div class="auth-modal-content boxscore-modal-content">
-      <button id="close-boxscore-btn" class="close-btn" aria-label="Close box score">&times;</button>
-      
+      <button type="button" id="close-boxscore-btn" class="close-btn" aria-label="Close box score">&times;</button>
+
       <div class="boxscore-header">
         <h3 id="boxscore-modal-title">Matchup Box Score</h3>
         <p id="boxscore-subtitle" class="auth-subtitle">Click ⭐ next to a player to track them</p>
@@ -145,8 +145,8 @@
 
       <!-- Team Switcher Tabs -->
       <div id="boxscore-tabs" class="boxscore-tabs">
-        <button class="tab-btn active" data-team-index="0" id="tab-away">Away Team</button>
-        <button class="tab-btn" data-team-index="1" id="tab-home">Home Team</button>
+        <button type="button" class="tab-btn active" data-team-index="0" id="tab-away">Away Team</button>
+        <button type="button" class="tab-btn" data-team-index="1" id="tab-home">Home Team</button>
       </div>
 
       <!-- Loading / Error / Stats Table Container -->
