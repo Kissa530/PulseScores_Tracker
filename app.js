@@ -15,13 +15,13 @@
   const ESPN_NBA_URL = 'https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard';
   const ESPN_SUMMARY_URL = 'https://site.api.espn.com/apis/site/v2/sports/basketball/nba/summary';
 
-  const TEAM_EMOJIS = {
-    ATL: '🦅', BOS: '☘️', BKN: '🗽', CHA: '🐝', CHI: '🐂',
+const TEAM_EMOJIS = {
+    ATL: '🦅', BOS: '☘️', BKN: '🥅', CHA: '🐝', CHI: '🐂',
     CLE: '⚔️', DAL: '🐴', DEN: '⛏️', DET: '⚙️', GSW: '🌉',
     HOU: '🚀', IND: '🏎️', LAC: '⛵', LAL: '👑', MEM: '🐻',
     MIA: '🔥', MIL: '🦌', MIN: '🐺', NOP: '⚜️', NYK: '🗽',
     OKC: '⚡', ORL: '✨', PHI: '🔔', PHX: '☀️', POR: '🌹',
-    SAC: '👑', SAS: '🤠', TOR: '🦖', UTA: '🎷', WAS: '🧙'
+    SAC: '👑', SAS: '🤠', TOR: '🦖', UTA: '🎷', WAS: '🦅'
   };
 
   const CODE_MAP = {
