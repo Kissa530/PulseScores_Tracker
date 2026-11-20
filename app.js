@@ -53,7 +53,7 @@
   let currentUser = null;
   let isSignUpMode = false;
 
-  // Phase 1 Filter State
+  // Filter State
   let activeStatusFilter = 'ALL'; // ALL | LIVE | FINAL | UPCOMING
   let activeSlateFilter = 'ALL';  // ALL | TODAY | YESTERDAY | UPCOMING
 
@@ -482,7 +482,6 @@
       return Number.isNaN(n) ? 0 : n;
     };
 
-    // Identify team leaders in PTS, REB, AST
     let topPtsVal = -1;
     let topRebVal = -1;
     let topAstVal = -1;
@@ -635,7 +634,7 @@
     }
   }
 
-  // --- Phase 1 Filter Bar Renderer ---
+  // --- Filter Bar Renderer ---
   function renderFilterBar() {
     if (!favoriteSection || !favoriteSection.parentNode) return;
 
@@ -714,7 +713,7 @@
     return `
       <article class="game-card ${isSpotlight ? 'spotlight' : ''}" data-game-id="${game.id}" data-matchup="${matchupTitle}">
         ${isSpotlight ? `<div class="spotlight-badge">${badgeLabel}</div>` : ''}
-        
+
         <div class="game-header">
           <div class="header-badges">
             <span class="game-status-badge ${game.status.toLowerCase()}">
@@ -768,24 +767,38 @@
 
     renderFilterBar();
 
-    const filteredGames = games.filter(game => {
-      const matchesStatus = activeStatusFilter === 'ALL' || game.status === activeStatusFilter;
-      const matchesSlate =
-        activeSlateFilter === 'ALL' ||
-        (activeSlateFilter === 'TODAY' && game.dateGroup === 'today') ||
-        (activeSlateFilter === 'YESTERDAY' && game.dateGroup === 'yesterday') ||
-        (activeSlateFilter === 'UPCOMING' && game.dateGroup === 'upcoming');
-      return matchesStatus && matchesSlate;
-    });
+    const matchesStatus = game =>
+      activeStatusFilter === 'ALL' || game.status === activeStatusFilter;
+
+    // Today's games respond to Status and Today/Full Week slate filters
+    const allowToday = activeSlateFilter === 'ALL' || activeSlateFilter === 'TODAY';
+    const todayGames = allowToday
+      ? games.filter(g => g.dateGroup === 'today' && matchesStatus(g))
+      : [];
+
+    // Past 3 days and upcoming 3 days always show all teams & statuses
+    // unless the user specifically selects Today, Yesterday, or Next 3 Days on Slate
+    const rawYesterday = games.filter(g => g.dateGroup === 'yesterday');
+    const rawOlderPast = games.filter(g => g.dateGroup === 'past');
+    const rawUpcoming = games.filter(g => g.dateGroup === 'upcoming');
 
     const showLastNight = isBeforeThreePM();
-    const todayGames = filteredGames.filter(g => g.dateGroup === 'today');
-    const yesterdayGames = filteredGames.filter(g => g.dateGroup === 'yesterday');
-    const olderPastGames = filteredGames.filter(g => g.dateGroup === 'past');
-    const upcomingGames = filteredGames.filter(g => g.dateGroup === 'upcoming');
+    const lastNightGames =
+      showLastNight && (activeSlateFilter === 'ALL' || activeSlateFilter === 'YESTERDAY')
+        ? rawYesterday
+        : [];
 
-    const lastNightGames = showLastNight ? yesterdayGames : [];
-    const recentPastGames = showLastNight ? olderPastGames : [...olderPastGames, ...yesterdayGames];
+    const recentPastGames =
+      activeSlateFilter === 'TODAY' || activeSlateFilter === 'UPCOMING'
+        ? []
+        : showLastNight
+          ? rawOlderPast
+          : [...rawOlderPast, ...rawYesterday];
+
+    const upcomingGames =
+      activeSlateFilter === 'TODAY' || activeSlateFilter === 'YESTERDAY'
+        ? []
+        : rawUpcoming;
 
     let favoriteGame = null;
     let isFavFromLastNight = false;
@@ -796,8 +809,8 @@
         g => g.home_team_code === favoriteTeamCode || g.away_team_code === favoriteTeamCode
       );
 
-      if (!favoriteGame && showLastNight) {
-        favoriteGame = yesterdayGames.find(
+      if (!favoriteGame && showLastNight && allowToday) {
+        favoriteGame = rawYesterday.find(
           g => g.home_team_code === favoriteTeamCode || g.away_team_code === favoriteTeamCode
         );
         if (favoriteGame) isFavFromLastNight = true;
@@ -899,60 +912,107 @@
     }
   }
 
-  // --- Event Listeners Setup ---
+  // --- Event Listeners ---
   function setupEventListeners() {
     if (favoriteSelect) {
-      favoriteSelect.addEventListener('change', (e) => {
+      favoriteSelect.value = favoriteTeamCode;
+      favoriteSelect.addEventListener('change', async (e) => {
         favoriteTeamCode = e.target.value;
         localStorage.setItem(STORAGE_KEY, favoriteTeamCode);
-
-        if (currentUser) {
-          saveUserFavoriteTeam(favoriteTeamCode);
-        }
-
         renderDashboard(currentGamesData);
+        if (currentUser) {
+          await saveUserFavoriteTeam(favoriteTeamCode);
+        }
       });
     }
 
     if (refreshBtn) {
-      refreshBtn.addEventListener('click', () => {
-        fetchLiveGames(true);
-      });
+      refreshBtn.addEventListener('click', () => fetchLiveGames(true));
     }
 
     document.addEventListener('click', (e) => {
       const card = e.target.closest('.game-card');
       if (card && card.dataset.gameId) {
-        openBoxScoreModal(card.dataset.gameId, card.dataset.matchup);
+        openBoxScoreModal(card.dataset.gameId, card.dataset.matchup || 'Game');
       }
     });
 
-    if (closeBoxscoreBtn) {
-      closeBoxscoreBtn.addEventListener('click', () => {
-        boxscoreModal.classList.add('hidden');
-      });
-    }
-
-    if (boxscoreModal) {
+    if (closeBoxscoreBtn && boxscoreModal) {
+      closeBoxscoreBtn.addEventListener('click', () => boxscoreModal.classList.add('hidden'));
       boxscoreModal.addEventListener('click', (e) => {
-        if (e.target === boxscoreModal) {
-          boxscoreModal.classList.add('hidden');
-        }
+        if (e.target === boxscoreModal) boxscoreModal.classList.add('hidden');
       });
     }
 
-    document.querySelectorAll('.tab-btn').forEach(tab => {
-      tab.addEventListener('click', () => {
-        document.querySelectorAll('.tab-btn').forEach(t => t.classList.remove('active'));
-        tab.classList.add('active');
-        activeBoxScoreTeamIndex = Number(tab.dataset.teamIndex);
-        renderBoxScoreTable(activeBoxScoreTeamIndex);
+    if (tabAway && tabHome) {
+      tabAway.addEventListener('click', () => {
+        activeBoxScoreTeamIndex = 0;
+        tabAway.classList.add('active');
+        tabHome.classList.remove('active');
+        renderBoxScoreTable(0);
       });
-    });
 
-    if (authModalBtn) {
+      tabHome.addEventListener('click', () => {
+        activeBoxScoreTeamIndex = 1;
+        tabHome.classList.add('active');
+        tabAway.classList.remove('active');
+        renderBoxScoreTable(1);
+      });
+    }
+
+    if (authModalBtn && authModal) {
       authModalBtn.addEventListener('click', () => {
-        if (authModal) authModal.classList.remove('hidden');
+        isSignUpMode = false;
+        authModalTitle.textContent = 'Sign In to PulseScores';
+        authSubmitBtn.textContent = 'Sign In';
+        authSwitchMode.textContent = 'Sign Up';
+        authError.classList.add('hidden');
+        authModal.classList.remove('hidden');
+      });
+    }
+
+    if (closeModalBtn && authModal) {
+      closeModalBtn.addEventListener('click', () => authModal.classList.add('hidden'));
+      authModal.addEventListener('click', (e) => {
+        if (e.target === authModal) authModal.classList.add('hidden');
+      });
+    }
+
+    if (authSwitchMode) {
+      authSwitchMode.addEventListener('click', (e) => {
+        e.preventDefault();
+        isSignUpMode = !isSignUpMode;
+        authModalTitle.textContent = isSignUpMode ? 'Create PulseScores Account' : 'Sign In to PulseScores';
+        authSubmitBtn.textContent = isSignUpMode ? 'Create Account' : 'Sign In';
+        authSwitchMode.textContent = isSignUpMode ? 'Sign In' : 'Sign Up';
+        authError.classList.add('hidden');
+      });
+    }
+
+    if (authForm) {
+      authForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const email = authEmailInput.value.trim();
+        const password = authPasswordInput.value;
+        authError.classList.add('hidden');
+        authSubmitBtn.disabled = true;
+
+        try {
+          if (isSignUpMode) {
+            const { error } = await supabaseClient.auth.signUp({ email, password });
+            if (error) throw error;
+            authError.textContent = 'Check your email to confirm your account, or sign in if already confirmed.';
+            authError.classList.remove('hidden');
+          } else {
+            const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
+            if (error) throw error;
+          }
+        } catch (err) {
+          authError.textContent = err.message;
+          authError.classList.remove('hidden');
+        } finally {
+          authSubmitBtn.disabled = false;
+        }
       });
     }
 
@@ -961,85 +1021,15 @@
         await supabaseClient.auth.signOut();
       });
     }
-
-    if (closeModalBtn) {
-      closeModalBtn.addEventListener('click', () => {
-        if (authModal) authModal.classList.add('hidden');
-      });
-    }
-
-    if (authSwitchMode) {
-      authSwitchMode.addEventListener('click', (e) => {
-        if (e.target && e.target.id === 'toggle-mode-link') {
-          e.preventDefault();
-          isSignUpMode = !isSignUpMode;
-          if (authModalTitle) {
-            authModalTitle.textContent = isSignUpMode ? 'Create Account' : 'Welcome to PulseScores';
-          }
-          if (authSubmitBtn) {
-            authSubmitBtn.textContent = isSignUpMode ? 'Sign Up' : 'Sign In';
-          }
-          authSwitchMode.innerHTML = isSignUpMode
-            ? `Already have an account? <a href="#" id="toggle-mode-link">Sign In</a>`
-            : `Don't have an account? <a href="#" id="toggle-mode-link">Sign Up</a>`;
-          if (authError) authError.classList.add('hidden');
-        }
-      });
-    }
-
-    if (authForm) {
-      authForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        if (authError) authError.classList.add('hidden');
-        if (authSubmitBtn) authSubmitBtn.textContent = 'Processing...';
-
-        const email = authEmailInput ? authEmailInput.value.trim() : '';
-        const password = authPasswordInput ? authPasswordInput.value : '';
-        let error = null;
-
-        if (isSignUpMode) {
-          const res = await supabaseClient.auth.signUp({ email, password });
-          error = res.error;
-          if (!error) {
-            alert('Account created! You can now sign in.');
-          }
-        } else {
-          const res = await supabaseClient.auth.signInWithPassword({ email, password });
-          error = res.error;
-        }
-
-        if (error) {
-          if (authError) {
-            authError.textContent = error.message;
-            authError.classList.remove('hidden');
-          }
-          if (authSubmitBtn) authSubmitBtn.textContent = isSignUpMode ? 'Sign Up' : 'Sign In';
-        } else {
-          authForm.reset();
-          if (authModal) authModal.classList.add('hidden');
-          if (authSubmitBtn) authSubmitBtn.textContent = isSignUpMode ? 'Sign Up' : 'Sign In';
-        }
-      });
-    }
   }
 
   // --- Initialization ---
-  function init() {
-    if (favoriteTeamCode && favoriteSelect) {
-      favoriteSelect.value = favoriteTeamCode;
-    }
-
+  async function init() {
     setupEventListeners();
-    checkUserSession();
-    fetchLiveGames(false);
-
+    await checkUserSession();
+    await fetchLiveGames(false);
     setInterval(() => fetchLiveGames(false), 30000);
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
-  } else {
-    init();
-  }
-
+  init();
 })();
