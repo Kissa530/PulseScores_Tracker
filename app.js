@@ -134,9 +134,9 @@
   function renderCardQuarterStrip(game) {
     if (game.status === 'UPCOMING') return '';
 
-    const homeQuarters = getQuarterValues(game.home_linescores, game.statusState, game.periodNumber);
     const awayQuarters = getQuarterValues(game.away_linescores, game.statusState, game.periodNumber);
-    const periodCount = Math.max(4, homeQuarters.length, awayQuarters.length);
+    const homeQuarters = getQuarterValues(game.home_linescores, game.statusState, game.periodNumber);
+    const periodCount = Math.max(4, awayQuarters.length, homeQuarters.length);
 
     const headers = Array.from({ length: periodCount }, (_, i) => {
       if (i < 4) return `Q${i + 1}`;
@@ -159,8 +159,8 @@
           <span class="card-quarter-team"></span>
           ${headers.map(h => `<span class="card-quarter-val">${h}</span>`).join('')}
         </div>
-        ${renderRow(game.home_team_code, homeQuarters)}
         ${renderRow(game.away_team_code, awayQuarters)}
+        ${renderRow(game.home_team_code, homeQuarters)}
       </div>
     `;
   }
@@ -511,19 +511,43 @@
 
       const data = await response.json();
       currentSummaryData = data;
-      const playersData = data?.boxscore?.players;
 
-      if (!playersData || playersData.length < 2) {
+      const headerComp = data?.header?.competitions?.[0];
+      const headerComps = headerComp?.competitors || [];
+      const awayHeader = headerComps.find(c => c.homeAway === 'away') || headerComps[0];
+      const homeHeader = headerComps.find(c => c.homeAway === 'home') || headerComps[1];
+
+      const playersData = data?.boxscore?.players;
+      const hasBoxScore = Array.isArray(playersData) && playersData.length >= 2;
+
+      const tabsContainer = boxscoreModal.querySelector('.boxscore-tabs');
+
+      if (!hasBoxScore) {
+        if (tabsContainer) tabsContainer.classList.add('hidden');
         boxscoreBody.innerHTML = renderPreGameSummaryHtml(data);
         return;
       }
+
+      if (tabsContainer) tabsContainer.classList.remove('hidden');
+
+      const awayTeamName =
+        awayHeader?.team?.displayName ||
+        playersData.find(p => p.homeAway === 'away')?.team?.displayName ||
+        playersData[0]?.team?.displayName ||
+        'Away Team';
+
+      const homeTeamName =
+        homeHeader?.team?.displayName ||
+        playersData.find(p => p.homeAway === 'home')?.team?.displayName ||
+        playersData[1]?.team?.displayName ||
+        'Home Team';
 
       currentBoxScoreData = playersData;
       activeBoxScoreTeamIndex = 0;
 
       if (tabAway && tabHome) {
-        tabAway.textContent = playersData[0].team.displayName;
-        tabHome.textContent = playersData[1].team.displayName;
+        tabAway.textContent = awayTeamName;
+        tabHome.textContent = homeTeamName;
         tabAway.classList.add('active');
         tabHome.classList.remove('active');
       }
@@ -773,6 +797,7 @@
     const isAwayFav = game.away_team_code === favoriteTeamCode;
     const isLive = game.status === 'LIVE';
     const isFinal = game.status === 'FINAL';
+    const isUpcoming = game.status === 'UPCOMING';
 
     const homeWinner = isFinal && game.home_score > game.away_score;
     const awayWinner = isFinal && game.away_score > game.home_score;
@@ -786,6 +811,46 @@
     const broadcastBadge = game.broadcast
       ? `<span class="broadcast-pill">${game.broadcast}</span>`
       : '';
+
+    const awayRowHtml = `
+      <div class="team-row">
+        <div class="team-info">
+          <span class="team-logo">${game.away_team_logo}</span>
+          <div class="team-meta">
+            <div class="team-name-line">
+              <span class="team-name ${isAwayFav ? 'is-favorite' : ''}">
+                ${game.away_team_name}
+              </span>
+              <span class="role-tag role-away">AWAY</span>
+            </div>
+            ${game.away_record ? `<span class="team-record">${game.away_record}</span>` : ''}
+          </div>
+        </div>
+        <span class="team-score ${isFinal ? (awayWinner ? 'winner' : 'loser') : ''}">
+          ${isUpcoming ? '-' : game.away_score}
+        </span>
+      </div>
+    `;
+
+    const homeRowHtml = `
+      <div class="team-row">
+        <div class="team-info">
+          <span class="team-logo">${game.home_team_logo}</span>
+          <div class="team-meta">
+            <div class="team-name-line">
+              <span class="team-name ${isHomeFav ? 'is-favorite' : ''}">
+                ${game.home_team_name}
+              </span>
+              <span class="role-tag role-home">HOME</span>
+            </div>
+            ${game.home_record ? `<span class="team-record">${game.home_record}</span>` : ''}
+          </div>
+        </div>
+        <span class="team-score ${isFinal ? (homeWinner ? 'winner' : 'loser') : ''}">
+          ${isUpcoming ? '-' : game.home_score}
+        </span>
+      </div>
+    `;
 
     return `
       <article class="game-card ${isSpotlight ? 'spotlight' : ''}" data-game-id="${game.id}" data-matchup="${matchupTitle}">
@@ -803,35 +868,8 @@
         </div>
 
         <div class="teams-container">
-          <div class="team-row">
-            <div class="team-info">
-              <span class="team-logo">${game.home_team_logo}</span>
-              <div class="team-meta">
-                <span class="team-name ${isHomeFav ? 'is-favorite' : ''}">
-                  ${game.home_team_name}
-                </span>
-                ${game.home_record ? `<span class="team-record">${game.home_record}</span>` : ''}
-              </div>
-            </div>
-            <span class="team-score ${isFinal ? (homeWinner ? 'winner' : 'loser') : ''}">
-              ${game.status === 'UPCOMING' ? '-' : game.home_score}
-            </span>
-          </div>
-
-          <div class="team-row">
-            <div class="team-info">
-              <span class="team-logo">${game.away_team_logo}</span>
-              <div class="team-meta">
-                <span class="team-name ${isAwayFav ? 'is-favorite' : ''}">
-                  ${game.away_team_name}
-                </span>
-                ${game.away_record ? `<span class="team-record">${game.away_record}</span>` : ''}
-              </div>
-            </div>
-            <span class="team-score ${isFinal ? (awayWinner ? 'winner' : 'loser') : ''}">
-              ${game.status === 'UPCOMING' ? '-' : game.away_score}
-            </span>
-          </div>
+          ${awayRowHtml}
+          ${homeRowHtml}
         </div>
 
         ${renderCardQuarterStrip(game)}
