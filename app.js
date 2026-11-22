@@ -43,6 +43,7 @@
   // --- Constants & State ---
   const STORAGE_KEY = 'pulsescores_favorite_team';
   const PLAYERS_STORAGE_KEY = 'pulsescores_fav_players';
+  const REFRESH_INTERVAL_MS = 30000;
 
   let favoriteTeamCode = localStorage.getItem(STORAGE_KEY) || '';
   let favoritePlayers = JSON.parse(localStorage.getItem(PLAYERS_STORAGE_KEY) || '[]');
@@ -109,6 +110,61 @@
     return state === 'in' && period >= 4 && diff <= 5;
   }
 
+  function getQuarterValues(linescores = [], statusState = 'post', currentPeriod = 4) {
+    const safeLines = Array.isArray(linescores) ? linescores : [];
+    const totalPeriods = Math.max(4, Number(currentPeriod) || 0, safeLines.length);
+
+    return Array.from({ length: totalPeriods }, (_, idx) => {
+      const periodNum = idx + 1;
+      const entry = safeLines[idx];
+      const rawVal = entry?.displayValue ?? entry?.value;
+
+      if (rawVal !== undefined && rawVal !== null && String(rawVal).trim() !== '') {
+        return String(rawVal);
+      }
+
+      if (statusState === 'in' && periodNum > Number(currentPeriod || 0)) {
+        return '—';
+      }
+
+      return statusState === 'post' ? '0' : '-';
+    });
+  }
+
+  function renderCardQuarterStrip(game) {
+    if (game.status === 'UPCOMING') return '';
+
+    const homeQuarters = getQuarterValues(game.home_linescores, game.statusState, game.periodNumber);
+    const awayQuarters = getQuarterValues(game.away_linescores, game.statusState, game.periodNumber);
+    const periodCount = Math.max(4, homeQuarters.length, awayQuarters.length);
+
+    const headers = Array.from({ length: periodCount }, (_, i) => {
+      if (i < 4) return `Q${i + 1}`;
+      const otNum = i - 3;
+      return otNum === 1 ? 'OT' : `OT${otNum}`;
+    });
+
+    const renderRow = (label, quarters) => `
+      <div class="card-quarter-row">
+        <span class="card-quarter-team">${label}</span>
+        ${Array.from({ length: periodCount }, (_, idx) =>
+          `<span class="card-quarter-val">${quarters[idx] ?? '-'}</span>`
+        ).join('')}
+      </div>
+    `;
+
+    return `
+      <div class="card-quarters" aria-label="Quarter by quarter scores">
+        <div class="card-quarter-row card-quarter-head">
+          <span class="card-quarter-team"></span>
+          ${headers.map(h => `<span class="card-quarter-val">${h}</span>`).join('')}
+        </div>
+        ${renderRow(game.home_team_code, homeQuarters)}
+        ${renderRow(game.away_team_code, awayQuarters)}
+      </div>
+    `;
+  }
+
   // --- Phase 2 Stat & Linescore Helpers ---
   function getDoubleDoubleBadge(pts, reb, ast, stl, blk) {
     const doubleCats = [pts, reb, ast, stl, blk].filter(n => n >= 10).length;
@@ -126,24 +182,41 @@
     const competitors = headerComp?.competitors || [];
     if (competitors.length < 2) return '';
 
+    const gameState = headerComp?.status?.type?.state; // 'pre' | 'in' | 'post'
+    const currentPeriod = Number(headerComp?.status?.period || 0);
+
     const away = competitors.find(c => c.homeAway === 'away') || competitors[0];
     const home = competitors.find(c => c.homeAway === 'home') || competitors[1];
 
     const awayLines = away.linescores || [];
     const homeLines = home.linescores || [];
-    const periodCount = Math.max(4, awayLines.length, homeLines.length);
+    const periodCount = Math.max(4, currentPeriod, awayLines.length, homeLines.length);
 
-    const periodHeaders = Array.from({ length: periodCount }, (_, i) =>
-      i < 4 ? `Q${i + 1}` : `OT${periodCount > 5 ? i - 3 : ''}`
-    );
+    const periodHeaders = Array.from({ length: periodCount }, (_, i) => {
+      if (i < 4) return `Q${i + 1}`;
+      const otNum = i - 3;
+      return otNum === 1 ? 'OT' : `OT${otNum}`;
+    });
 
     const buildRow = (team) => {
       const code = normalizeCode(team.team?.abbreviation || '');
       const emoji = TEAM_EMOJIS[code] || '🏀';
       const lines = team.linescores || [];
+
       const cells = Array.from({ length: periodCount }, (_, idx) => {
-        const val = lines[idx]?.value;
-        return `<td>${val !== undefined ? val : '-'}</td>`;
+        const periodNum = idx + 1;
+        const entry = lines[idx];
+        const rawVal = entry?.displayValue ?? entry?.value;
+
+        if (rawVal !== undefined && rawVal !== null && String(rawVal).trim() !== '') {
+          return `<td>${rawVal}</td>`;
+        }
+
+        if (gameState === 'in' && periodNum > currentPeriod) {
+          return `<td>—</td>`;
+        }
+
+        return `<td>${gameState === 'post' ? '0' : '-'}</td>`;
       }).join('');
 
       return `
@@ -385,15 +458,19 @@
             home_team_name: home.team.displayName,
             home_team_logo: TEAM_EMOJIS[homeCode] || '🏀',
             home_record: getTeamRecord(home),
+            home_linescores: home.linescores || [],
             away_team_code: awayCode,
             away_team_name: away.team.displayName,
             away_team_logo: TEAM_EMOJIS[awayCode] || '🏀',
             away_record: getTeamRecord(away),
+            away_linescores: away.linescores || [],
             home_score: homeScore,
             away_score: awayScore,
             broadcast: getBroadcastLabel(comp),
             is_clutch: isClutchGame(event.status, homeScore, awayScore),
             status: status,
+            statusState: state,
+            periodNumber: Number(event.status?.period || 0),
             period: event.status.type.shortDetail,
             start_time: event.status.type.shortDetail
           });
@@ -757,9 +834,21 @@
           </div>
         </div>
 
+        ${renderCardQuarterStrip(game)}
+
         <div class="game-card-footer">View Box Score &amp; Stats &rarr;</div>
       </article>
     `;
+  }
+
+  function bindCardClickHandlers() {
+    document.querySelectorAll('.game-card[data-game-id]').forEach(card => {
+      card.addEventListener('click', () => {
+        const gameId = card.dataset.gameId;
+        const matchup = card.dataset.matchup || 'Game';
+        openBoxScoreModal(gameId, matchup);
+      });
+    });
   }
 
   function renderDashboard(games) {
@@ -770,14 +859,11 @@
     const matchesStatus = game =>
       activeStatusFilter === 'ALL' || game.status === activeStatusFilter;
 
-    // Today's games respond to Status and Today/Full Week slate filters
     const allowToday = activeSlateFilter === 'ALL' || activeSlateFilter === 'TODAY';
     const todayGames = allowToday
       ? games.filter(g => g.dateGroup === 'today' && matchesStatus(g))
       : [];
 
-    // Past 3 days and upcoming 3 days always show all teams & statuses
-    // unless the user specifically selects Today, Yesterday, or Next 3 Days on Slate
     const rawYesterday = games.filter(g => g.dateGroup === 'yesterday');
     const rawOlderPast = games.filter(g => g.dateGroup === 'past');
     const rawUpcoming = games.filter(g => g.dateGroup === 'upcoming');
@@ -847,7 +933,7 @@
     }
 
     if (otherHeading) {
-      otherHeading.textContent = favoriteTeamCode ? "Other Games Today" : "Today's Scoreboard";
+      otherHeading.textContent = favoriteTeamCode ? 'Other Games Today' : "Today's Scoreboard";
     }
     if (otherContainer) {
       otherContainer.innerHTML = otherTodayGames.length > 0
@@ -867,57 +953,66 @@
           <div class="games-grid" id="last-night-games-container"></div>
         </div>
 
-        <div class="section-label" style="margin-bottom: 0.75rem;">Recent Results (Past 3 Days)</div>
-        <div class="games-grid" id="past-games-container" style="margin-bottom: 2rem;"></div>
+        <div id="past-games-wrapper" style="margin-bottom: 2rem;">
+          <div class="section-label" style="margin-bottom: 0.75rem;">Recent Results (Past 3 Days)</div>
+          <div class="games-grid" id="past-games-container"></div>
+        </div>
 
-        <div class="section-label" style="margin-bottom: 0.75rem;">Upcoming Matchups (Next 3 Days)</div>
-        <div class="games-grid" id="upcoming-games-container"></div>
+        <div id="upcoming-games-wrapper">
+          <div class="section-label" style="margin-bottom: 0.75rem;">Upcoming Games (Next 3 Days)</div>
+          <div class="games-grid" id="upcoming-games-container"></div>
+        </div>
       `;
+
       otherContainer.parentNode.parentNode.appendChild(weekSection);
     }
 
     const lastNightWrapper = document.getElementById('last-night-wrapper');
     const lastNightContainer = document.getElementById('last-night-games-container');
+    const pastWrapper = document.getElementById('past-games-wrapper');
+    const pastContainer = document.getElementById('past-games-container');
+    const upcomingWrapper = document.getElementById('upcoming-games-wrapper');
+    const upcomingContainer = document.getElementById('upcoming-games-container');
 
     if (lastNightWrapper && lastNightContainer) {
-      if (showLastNight && lastNightGames.length > 0) {
+      if (lastNightGames.length > 0) {
         lastNightWrapper.style.display = 'block';
-        lastNightContainer.innerHTML = lastNightGames
-          .map(game => renderGameCard(game, false))
-          .join('');
+        lastNightContainer.innerHTML = lastNightGames.map(g => renderGameCard(g, false)).join('');
       } else {
         lastNightWrapper.style.display = 'none';
         lastNightContainer.innerHTML = '';
       }
     }
 
-    const pastContainer = document.getElementById('past-games-container');
-    if (pastContainer) {
-      pastContainer.innerHTML = recentPastGames.length > 0
-        ? recentPastGames
-            .sort((a, b) => b.dateString.localeCompare(a.dateString))
-            .map(game => renderGameCard(game, false))
-            .join('')
-        : `<div class="empty-spotlight"><span>No Recent Games</span></div>`;
+    if (pastWrapper && pastContainer) {
+      if (recentPastGames.length > 0) {
+        pastWrapper.style.display = 'block';
+        pastContainer.innerHTML = recentPastGames.map(g => renderGameCard(g, false)).join('');
+      } else {
+        pastWrapper.style.display = 'none';
+        pastContainer.innerHTML = '';
+      }
     }
 
-    const upcomingContainer = document.getElementById('upcoming-games-container');
-    if (upcomingContainer) {
-      upcomingContainer.innerHTML = upcomingGames.length > 0
-        ? upcomingGames
-            .sort((a, b) => a.dateString.localeCompare(b.dateString))
-            .map(game => renderGameCard(game, false))
-            .join('')
-        : `<div class="empty-spotlight"><span>No Upcoming Games Scheduled</span></div>`;
+    if (upcomingWrapper && upcomingContainer) {
+      if (upcomingGames.length > 0) {
+        upcomingWrapper.style.display = 'block';
+        upcomingContainer.innerHTML = upcomingGames.map(g => renderGameCard(g, false)).join('');
+      } else {
+        upcomingWrapper.style.display = 'none';
+        upcomingContainer.innerHTML = '';
+      }
     }
+
+    bindCardClickHandlers();
   }
 
-  // --- Event Listeners ---
-  function setupEventListeners() {
+  // --- Event Listeners & Initialization ---
+  function initEventListeners() {
     if (favoriteSelect) {
-      favoriteSelect.value = favoriteTeamCode;
+      if (favoriteTeamCode) favoriteSelect.value = favoriteTeamCode;
       favoriteSelect.addEventListener('change', async (e) => {
-        favoriteTeamCode = e.target.value;
+        favoriteTeamCode = normalizeCode(e.target.value);
         localStorage.setItem(STORAGE_KEY, favoriteTeamCode);
         renderDashboard(currentGamesData);
         if (currentUser) {
@@ -930,88 +1025,46 @@
       refreshBtn.addEventListener('click', () => fetchLiveGames(true));
     }
 
-    document.addEventListener('click', (e) => {
-      const card = e.target.closest('.game-card');
-      if (card && card.dataset.gameId) {
-        openBoxScoreModal(card.dataset.gameId, card.dataset.matchup || 'Game');
-      }
-    });
-
-    if (closeBoxscoreBtn && boxscoreModal) {
-      closeBoxscoreBtn.addEventListener('click', () => boxscoreModal.classList.add('hidden'));
-      boxscoreModal.addEventListener('click', (e) => {
-        if (e.target === boxscoreModal) boxscoreModal.classList.add('hidden');
-      });
-    }
-
-    if (tabAway && tabHome) {
-      tabAway.addEventListener('click', () => {
-        activeBoxScoreTeamIndex = 0;
-        tabAway.classList.add('active');
-        tabHome.classList.remove('active');
-        renderBoxScoreTable(0);
-      });
-
-      tabHome.addEventListener('click', () => {
-        activeBoxScoreTeamIndex = 1;
-        tabHome.classList.add('active');
-        tabAway.classList.remove('active');
-        renderBoxScoreTable(1);
-      });
-    }
-
     if (authModalBtn && authModal) {
       authModalBtn.addEventListener('click', () => {
-        isSignUpMode = false;
-        authModalTitle.textContent = 'Sign In to PulseScores';
-        authSubmitBtn.textContent = 'Sign In';
-        authSwitchMode.textContent = 'Sign Up';
-        authError.classList.add('hidden');
+        if (authError) authError.textContent = '';
         authModal.classList.remove('hidden');
       });
     }
 
     if (closeModalBtn && authModal) {
       closeModalBtn.addEventListener('click', () => authModal.classList.add('hidden'));
-      authModal.addEventListener('click', (e) => {
-        if (e.target === authModal) authModal.classList.add('hidden');
-      });
     }
 
     if (authSwitchMode) {
       authSwitchMode.addEventListener('click', (e) => {
         e.preventDefault();
         isSignUpMode = !isSignUpMode;
-        authModalTitle.textContent = isSignUpMode ? 'Create PulseScores Account' : 'Sign In to PulseScores';
-        authSubmitBtn.textContent = isSignUpMode ? 'Create Account' : 'Sign In';
-        authSwitchMode.textContent = isSignUpMode ? 'Sign In' : 'Sign Up';
-        authError.classList.add('hidden');
+        if (authModalTitle) authModalTitle.textContent = isSignUpMode ? 'Create Account' : 'Sign In';
+        if (authSubmitBtn) authSubmitBtn.textContent = isSignUpMode ? 'Sign Up' : 'Sign In';
+        authSwitchMode.textContent = isSignUpMode
+          ? 'Already have an account? Sign in'
+          : 'Need an account? Sign up';
       });
     }
 
     if (authForm) {
       authForm.addEventListener('submit', async (e) => {
         e.preventDefault();
-        const email = authEmailInput.value.trim();
-        const password = authPasswordInput.value;
-        authError.classList.add('hidden');
-        authSubmitBtn.disabled = true;
+        if (authError) authError.textContent = '';
+
+        const email = authEmailInput?.value.trim();
+        const password = authPasswordInput?.value;
+        if (!email || !password) return;
 
         try {
-          if (isSignUpMode) {
-            const { error } = await supabaseClient.auth.signUp({ email, password });
-            if (error) throw error;
-            authError.textContent = 'Check your email to confirm your account, or sign in if already confirmed.';
-            authError.classList.remove('hidden');
-          } else {
-            const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
-            if (error) throw error;
-          }
+          const result = isSignUpMode
+            ? await supabaseClient.auth.signUp({ email, password })
+            : await supabaseClient.auth.signInWithPassword({ email, password });
+
+          if (result.error) throw result.error;
         } catch (err) {
-          authError.textContent = err.message;
-          authError.classList.remove('hidden');
-        } finally {
-          authSubmitBtn.disabled = false;
+          if (authError) authError.textContent = err.message || 'Authentication failed.';
         }
       });
     }
@@ -1021,15 +1074,37 @@
         await supabaseClient.auth.signOut();
       });
     }
+
+    if (closeBoxscoreBtn && boxscoreModal) {
+      closeBoxscoreBtn.addEventListener('click', () => boxscoreModal.classList.add('hidden'));
+    }
+
+    if (tabAway) {
+      tabAway.addEventListener('click', () => {
+        activeBoxScoreTeamIndex = 0;
+        tabAway.classList.add('active');
+        if (tabHome) tabHome.classList.remove('active');
+        renderBoxScoreTable(0);
+      });
+    }
+
+    if (tabHome) {
+      tabHome.addEventListener('click', () => {
+        activeBoxScoreTeamIndex = 1;
+        tabHome.classList.add('active');
+        if (tabAway) tabAway.classList.remove('active');
+        renderBoxScoreTable(1);
+      });
+    }
+
+    window.addEventListener('click', (e) => {
+      if (e.target === authModal) authModal.classList.add('hidden');
+      if (e.target === boxscoreModal) boxscoreModal.classList.add('hidden');
+    });
   }
 
-  // --- Initialization ---
-  async function init() {
-    setupEventListeners();
-    await checkUserSession();
-    await fetchLiveGames(false);
-    setInterval(() => fetchLiveGames(false), 30000);
-  }
-
-  init();
+  initEventListeners();
+  checkUserSession();
+  fetchLiveGames(false);
+  setInterval(() => fetchLiveGames(false), REFRESH_INTERVAL_MS);
 })();
