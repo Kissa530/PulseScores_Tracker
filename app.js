@@ -165,7 +165,7 @@
     `;
   }
 
-  // --- Phase 2 Stat & Linescore Helpers ---
+  // --- Phase 2 Stat, Linescore & Injury Helpers ---
   function getDoubleDoubleBadge(pts, reb, ast, stl, blk) {
     const doubleCats = [pts, reb, ast, stl, blk].filter(n => n >= 10).length;
     if (doubleCats >= 3) {
@@ -175,6 +175,17 @@
       return `<span class="milestone-badge dd">DD</span>`;
     }
     return '';
+  }
+
+  function getInjuryStatusClass(statusText = '') {
+    const normalized = statusText.toLowerCase();
+    if (normalized.includes('out') || normalized.includes('susp')) {
+      return 'out';
+    }
+    if (normalized.includes('prob') || normalized.includes('avail')) {
+      return 'probable';
+    }
+    return 'questionable';
   }
 
   function renderLinescoreHtml(summaryData) {
@@ -264,10 +275,19 @@
                   .map(inj => {
                     const playerName = inj.athlete?.displayName || 'Player';
                     const statusText = inj.status || inj.type?.description || 'Questionable';
+                    const statusClass = getInjuryStatusClass(statusText);
+                    const detailNote =
+                      inj.shortComment ||
+                      inj.details?.type ||
+                      (inj.type?.description && inj.type.description !== statusText ? inj.type.description : '');
+
                     return `
                       <div class="injury-item">
-                        <span>${playerName}</span>
-                        <span class="injury-status">${statusText}</span>
+                        <div class="injury-player-info">
+                          <span class="injury-player-name">${playerName}</span>
+                          ${detailNote ? `<span class="injury-detail">${detailNote}</span>` : ''}
+                        </div>
+                        <span class="injury-status ${statusClass}">${statusText}</span>
                       </div>
                     `;
                   })
