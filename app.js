@@ -45,7 +45,7 @@
   const PLAYERS_STORAGE_KEY = 'pulsescores_fav_players';
   const REFRESH_INTERVAL_MS = 30000;
 
-  let favoriteTeamCode = localStorage.getItem(STORAGE_KEY) || '';
+  let favoriteTeamCode = normalizeCode(localStorage.getItem(STORAGE_KEY) || '');
   let favoritePlayers = JSON.parse(localStorage.getItem(PLAYERS_STORAGE_KEY) || '[]');
   let currentGamesData = [];
   let currentSummaryData = null;
@@ -193,7 +193,7 @@
     const competitors = headerComp?.competitors || [];
     if (competitors.length < 2) return '';
 
-    const gameState = headerComp?.status?.type?.state; // 'pre' | 'in' | 'post'
+    const gameState = headerComp?.status?.type?.state;
     const currentPeriod = Number(headerComp?.status?.period || 0);
 
     const away = competitors.find(c => c.homeAway === 'away') || competitors[0];
@@ -319,7 +319,7 @@
 
       if (data) {
         if (data.favorite_team) {
-          favoriteTeamCode = data.favorite_team;
+          favoriteTeamCode = normalizeCode(data.favorite_team);
           localStorage.setItem(STORAGE_KEY, favoriteTeamCode);
           if (favoriteSelect) favoriteSelect.value = favoriteTeamCode;
         } else if (favoriteTeamCode) {
@@ -914,6 +914,8 @@
       activeStatusFilter === 'ALL' || game.status === activeStatusFilter;
 
     const allowToday = activeSlateFilter === 'ALL' || activeSlateFilter === 'TODAY';
+    const allowYesterday = activeSlateFilter === 'ALL' || activeSlateFilter === 'YESTERDAY';
+
     const todayGames = allowToday
       ? games.filter(g => g.dateGroup === 'today' && matchesStatus(g))
       : [];
@@ -923,10 +925,7 @@
     const rawUpcoming = games.filter(g => g.dateGroup === 'upcoming' && matchesStatus(g));
 
     const showLastNight = true;
-    const lastNightGames =
-      showLastNight && (activeSlateFilter === 'ALL' || activeSlateFilter === 'YESTERDAY')
-        ? rawYesterday
-        : [];
+    const lastNightGames = showLastNight && allowYesterday ? rawYesterday : [];
 
     const recentPastGames =
       activeSlateFilter === 'TODAY' || activeSlateFilter === 'UPCOMING'
@@ -947,7 +946,7 @@
         g => g.home_team_code === favoriteTeamCode || g.away_team_code === favoriteTeamCode
       );
 
-      if (!favoriteGame && allowToday) {
+      if (!favoriteGame && showLastNight && allowYesterday) {
         favoriteGame = rawYesterday.find(
           g => g.home_team_code === favoriteTeamCode || g.away_team_code === favoriteTeamCode
         );
