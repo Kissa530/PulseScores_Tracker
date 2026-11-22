@@ -462,6 +462,44 @@ body {
   text-align: right;
 }
 
+/* --- Quarter-by-Quarter Strip --- */
+.card-quarters {
+  margin-top: 0.75rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--border-subtle);
+  font-size: 0.75rem;
+  overflow-x: auto;
+}
+
+.card-quarter-row {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(1.55rem, 1fr);
+  gap: 0.25rem;
+  align-items: center;
+  padding: 0.16rem 0;
+}
+
+.card-quarter-head {
+  color: var(--text-muted);
+  font-weight: 700;
+  font-size: 0.68rem;
+  letter-spacing: 0.03em;
+}
+
+.card-quarter-team {
+  min-width: 2.4rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-align: left;
+}
+
+.card-quarter-val {
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
 /* Teams & Scores */
 .teams-container {
   display: flex;
