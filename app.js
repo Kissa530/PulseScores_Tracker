@@ -910,6 +910,7 @@
 
     renderFilterBar();
 
+    const activeFavCode = normalizeCode(favoriteTeamCode);
     const matchesStatus = game =>
       activeStatusFilter === 'ALL' || game.status === activeStatusFilter;
 
@@ -941,14 +942,14 @@
     let isFavFromYesterday = false;
     let otherTodayGames = [];
 
-    if (favoriteTeamCode) {
+    if (activeFavCode) {
       favoriteGame = todayGames.find(
-        g => g.home_team_code === favoriteTeamCode || g.away_team_code === favoriteTeamCode
+        g => g.home_team_code === activeFavCode || g.away_team_code === activeFavCode
       );
 
       if (!favoriteGame && showLastNight && allowYesterday) {
         favoriteGame = rawYesterday.find(
-          g => g.home_team_code === favoriteTeamCode || g.away_team_code === favoriteTeamCode
+          g => g.home_team_code === activeFavCode || g.away_team_code === activeFavCode
         );
         if (favoriteGame) {
           isFavFromYesterday = true;
@@ -956,22 +957,22 @@
       }
 
       otherTodayGames = todayGames.filter(
-        g => g.home_team_code !== favoriteTeamCode && g.away_team_code !== favoriteTeamCode
+        g => g.home_team_code !== activeFavCode && g.away_team_code !== activeFavCode
       );
     } else {
       otherTodayGames = todayGames;
     }
 
     if (favoriteContainer) {
-      if (favoriteTeamCode) {
+      if (activeFavCode) {
         if (favoriteGame) {
           const badge = isFavFromYesterday ? '⭐ Favorite • Yesterday' : '⭐ Favorite';
           favoriteContainer.innerHTML = renderGameCard(favoriteGame, true, badge);
         } else {
           favoriteContainer.innerHTML = `
             <div class="empty-spotlight">
-              <span>No Matching Game Today</span>
-              Your team either has no game on today's/yesterday's slate or is hidden by the active filter.
+              <span>No Matching Game on Today's or Yesterday's Slate</span>
+              Your team has no game on today's or yesterday's slate, or it is hidden by the active filter.
             </div>
           `;
         }
@@ -986,7 +987,7 @@
     }
 
     if (otherHeading) {
-      otherHeading.textContent = favoriteTeamCode ? 'Other Games Today' : "Today's Scoreboard";
+      otherHeading.textContent = activeFavCode ? 'Other Games Today' : "Today's Scoreboard";
     }
     if (otherContainer) {
       otherContainer.innerHTML = otherTodayGames.length > 0
