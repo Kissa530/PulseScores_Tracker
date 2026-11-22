@@ -1,6 +1,6 @@
 /**
  * PulseScores - Live ESPN & Supabase Auth Tracker (Phase 1 + Phase 2)
- * Architecture: 7-Day ESPN Scoreboard & Summary APIs, 3:00 PM Last-Night Rollover,
+ * Architecture: 7-Day ESPN Scoreboard & Summary APIs, All-Day Yesterday Rollover,
  * LocalStorage, Auto-Refresh, Status/Slate Filtering, Linescores, Stat Milestones,
  * Pre-Game Injuries, and Supabase Auth + Profile Sync.
  */
@@ -383,7 +383,7 @@
     }
   }
 
-  // --- Date & Rollover Helpers ---
+  // --- Date Helpers ---
   function formatDateYYYYMMDD(dateObj) {
     const year = dateObj.getFullYear();
     const month = String(dateObj.getMonth() + 1).padStart(2, '0');
@@ -399,10 +399,6 @@
       dates.push(formatDateYYYYMMDD(d));
     }
     return dates;
-  }
-
-  function isBeforeThreePM() {
-    return new Date().getHours() < 15;
   }
 
   // --- Live Data Fetching from ESPN (Full Week) ---
@@ -922,11 +918,11 @@
       ? games.filter(g => g.dateGroup === 'today' && matchesStatus(g))
       : [];
 
-    const rawYesterday = games.filter(g => g.dateGroup === 'yesterday');
-    const rawOlderPast = games.filter(g => g.dateGroup === 'past');
-    const rawUpcoming = games.filter(g => g.dateGroup === 'upcoming');
+    const rawYesterday = games.filter(g => g.dateGroup === 'yesterday' && matchesStatus(g));
+    const rawOlderPast = games.filter(g => g.dateGroup === 'past' && matchesStatus(g));
+    const rawUpcoming = games.filter(g => g.dateGroup === 'upcoming' && matchesStatus(g));
 
-    const showLastNight = isBeforeThreePM();
+    const showLastNight = true;
     const lastNightGames =
       showLastNight && (activeSlateFilter === 'ALL' || activeSlateFilter === 'YESTERDAY')
         ? rawYesterday
@@ -935,9 +931,7 @@
     const recentPastGames =
       activeSlateFilter === 'TODAY' || activeSlateFilter === 'UPCOMING'
         ? []
-        : showLastNight
-          ? rawOlderPast
-          : [...rawOlderPast, ...rawYesterday];
+        : rawOlderPast;
 
     const upcomingGames =
       activeSlateFilter === 'TODAY' || activeSlateFilter === 'YESTERDAY'
@@ -945,7 +939,7 @@
         : rawUpcoming;
 
     let favoriteGame = null;
-    let isFavFromLastNight = false;
+    let isFavFromYesterday = false;
     let otherTodayGames = [];
 
     if (favoriteTeamCode) {
@@ -953,11 +947,13 @@
         g => g.home_team_code === favoriteTeamCode || g.away_team_code === favoriteTeamCode
       );
 
-      if (!favoriteGame && showLastNight && allowToday) {
+      if (!favoriteGame && allowToday) {
         favoriteGame = rawYesterday.find(
           g => g.home_team_code === favoriteTeamCode || g.away_team_code === favoriteTeamCode
         );
-        if (favoriteGame) isFavFromLastNight = true;
+        if (favoriteGame) {
+          isFavFromYesterday = true;
+        }
       }
 
       otherTodayGames = todayGames.filter(
@@ -970,13 +966,13 @@
     if (favoriteContainer) {
       if (favoriteTeamCode) {
         if (favoriteGame) {
-          const badge = isFavFromLastNight ? '⭐ Favorite • Last Night' : '⭐ Favorite';
+          const badge = isFavFromYesterday ? '⭐ Favorite • Yesterday' : '⭐ Favorite';
           favoriteContainer.innerHTML = renderGameCard(favoriteGame, true, badge);
         } else {
           favoriteContainer.innerHTML = `
             <div class="empty-spotlight">
               <span>No Matching Game Today</span>
-              Your team either has the day off or is hidden by the active filter.
+              Your team either has no game on today's/yesterday's slate or is hidden by the active filter.
             </div>
           `;
         }
@@ -1007,12 +1003,12 @@
 
       weekSection.innerHTML = `
         <div id="last-night-wrapper" style="display: none; margin-bottom: 2rem;">
-          <div class="section-label" style="margin-bottom: 0.75rem;">Last Night's Finals</div>
+          <div class="section-label" style="margin-bottom: 0.75rem;">Yesterday's Games</div>
           <div class="games-grid" id="last-night-games-container"></div>
         </div>
 
         <div id="past-games-wrapper" style="margin-bottom: 2rem;">
-          <div class="section-label" style="margin-bottom: 0.75rem;">Recent Results (Past 3 Days)</div>
+          <div class="section-label" style="margin-bottom: 0.75rem;">Recent Results (Earlier Past Days)</div>
           <div class="games-grid" id="past-games-container"></div>
         </div>
 
