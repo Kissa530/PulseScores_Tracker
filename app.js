@@ -1,6 +1,6 @@
 /**
  * PulseScores - Live ESPN & Supabase Auth Tracker (Phase 1 + Phase 2)
- * Architecture: 7-Day ESPN Scoreboard & Summary APIs, 3:00 PM Last-Night Rollover,
+ * Architecture: 7-Day ESPN Scoreboard & Summary APIs, All-Day Yesterday Rollover,
  * LocalStorage, Auto-Refresh, Status/Slate Filtering, Linescores, Stat Milestones,
  * Pre-Game Injuries, and Supabase Auth + Profile Sync.
  */
@@ -45,7 +45,7 @@
   const PLAYERS_STORAGE_KEY = 'pulsescores_fav_players';
   const REFRESH_INTERVAL_MS = 30000;
 
-  let favoriteTeamCode = localStorage.getItem(STORAGE_KEY) || '';
+  let favoriteTeamCode = normalizeCode(localStorage.getItem(STORAGE_KEY) || '');
   let favoritePlayers = JSON.parse(localStorage.getItem(PLAYERS_STORAGE_KEY) || '[]');
   let currentGamesData = [];
   let currentSummaryData = null;
@@ -193,7 +193,7 @@
     const competitors = headerComp?.competitors || [];
     if (competitors.length < 2) return '';
 
-    const gameState = headerComp?.status?.type?.state; // 'pre' | 'in' | 'post'
+    const gameState = headerComp?.status?.type?.state;
     const currentPeriod = Number(headerComp?.status?.period || 0);
 
     const away = competitors.find(c => c.homeAway === 'away') || competitors[0];
@@ -319,7 +319,7 @@
 
       if (data) {
         if (data.favorite_team) {
-          favoriteTeamCode = data.favorite_team;
+          favoriteTeamCode = normalizeCode(data.favorite_team);
           localStorage.setItem(STORAGE_KEY, favoriteTeamCode);
           if (favoriteSelect) favoriteSelect.value = favoriteTeamCode;
         } else if (favoriteTeamCode) {
@@ -383,7 +383,7 @@
     }
   }
 
-  // --- Date & Rollover Helpers ---
+  // --- Date Helpers ---
   function formatDateYYYYMMDD(dateObj) {
     const year = dateObj.getFullYear();
     const month = String(dateObj.getMonth() + 1).padStart(2, '0');
@@ -399,10 +399,6 @@
       dates.push(formatDateYYYYMMDD(d));
     }
     return dates;
-  }
-
-  function isBeforeThreePM() {
-    return new Date().getHours() < 15;
   }
 
   // --- Live Data Fetching from ESPN (Full Week) ---
@@ -914,30 +910,28 @@
 
     renderFilterBar();
 
+    const activeFavCode = normalizeCode(favoriteTeamCode);
     const matchesStatus = game =>
       activeStatusFilter === 'ALL' || game.status === activeStatusFilter;
 
     const allowToday = activeSlateFilter === 'ALL' || activeSlateFilter === 'TODAY';
+    const allowYesterday = activeSlateFilter === 'ALL' || activeSlateFilter === 'YESTERDAY';
+
     const todayGames = allowToday
       ? games.filter(g => g.dateGroup === 'today' && matchesStatus(g))
       : [];
 
-    const rawYesterday = games.filter(g => g.dateGroup === 'yesterday');
-    const rawOlderPast = games.filter(g => g.dateGroup === 'past');
-    const rawUpcoming = games.filter(g => g.dateGroup === 'upcoming');
+    const rawYesterday = games.filter(g => g.dateGroup === 'yesterday' && matchesStatus(g));
+    const rawOlderPast = games.filter(g => g.dateGroup === 'past' && matchesStatus(g));
+    const rawUpcoming = games.filter(g => g.dateGroup === 'upcoming' && matchesStatus(g));
 
-    const showLastNight = isBeforeThreePM();
-    const lastNightGames =
-      showLastNight && (activeSlateFilter === 'ALL' || activeSlateFilter === 'YESTERDAY')
-        ? rawYesterday
-        : [];
+    const showLastNight = true;
+    const lastNightGames = showLastNight && allowYesterday ? rawYesterday : [];
 
     const recentPastGames =
       activeSlateFilter === 'TODAY' || activeSlateFilter === 'UPCOMING'
         ? []
-        : showLastNight
-          ? rawOlderPast
-          : [...rawOlderPast, ...rawYesterday];
+        : rawOlderPast;
 
     const upcomingGames =
       activeSlateFilter === 'TODAY' || activeSlateFilter === 'YESTERDAY'
@@ -945,38 +939,40 @@
         : rawUpcoming;
 
     let favoriteGame = null;
-    let isFavFromLastNight = false;
+    let isFavFromYesterday = false;
     let otherTodayGames = [];
 
-    if (favoriteTeamCode) {
+    if (activeFavCode) {
       favoriteGame = todayGames.find(
-        g => g.home_team_code === favoriteTeamCode || g.away_team_code === favoriteTeamCode
+        g => g.home_team_code === activeFavCode || g.away_team_code === activeFavCode
       );
 
-      if (!favoriteGame && showLastNight && allowToday) {
+      if (!favoriteGame && showLastNight && allowYesterday) {
         favoriteGame = rawYesterday.find(
-          g => g.home_team_code === favoriteTeamCode || g.away_team_code === favoriteTeamCode
+          g => g.home_team_code === activeFavCode || g.away_team_code === activeFavCode
         );
-        if (favoriteGame) isFavFromLastNight = true;
+        if (favoriteGame) {
+          isFavFromYesterday = true;
+        }
       }
 
       otherTodayGames = todayGames.filter(
-        g => g.home_team_code !== favoriteTeamCode && g.away_team_code !== favoriteTeamCode
+        g => g.home_team_code !== activeFavCode && g.away_team_code !== activeFavCode
       );
     } else {
       otherTodayGames = todayGames;
     }
 
     if (favoriteContainer) {
-      if (favoriteTeamCode) {
+      if (activeFavCode) {
         if (favoriteGame) {
-          const badge = isFavFromLastNight ? '⭐ Favorite • Last Night' : '⭐ Favorite';
+          const badge = isFavFromYesterday ? '⭐ Favorite • Yesterday' : '⭐ Favorite';
           favoriteContainer.innerHTML = renderGameCard(favoriteGame, true, badge);
         } else {
           favoriteContainer.innerHTML = `
             <div class="empty-spotlight">
-              <span>No Matching Game Today</span>
-              Your team either has the day off or is hidden by the active filter.
+              <span>No Matching Game on Today's or Yesterday's Slate</span>
+              Your team has no game on today's or yesterday's slate, or it is hidden by the active filter.
             </div>
           `;
         }
@@ -991,7 +987,7 @@
     }
 
     if (otherHeading) {
-      otherHeading.textContent = favoriteTeamCode ? 'Other Games Today' : "Today's Scoreboard";
+      otherHeading.textContent = activeFavCode ? 'Other Games Today' : "Today's Scoreboard";
     }
     if (otherContainer) {
       otherContainer.innerHTML = otherTodayGames.length > 0
@@ -1007,12 +1003,12 @@
 
       weekSection.innerHTML = `
         <div id="last-night-wrapper" style="display: none; margin-bottom: 2rem;">
-          <div class="section-label" style="margin-bottom: 0.75rem;">Last Night's Finals</div>
+          <div class="section-label" style="margin-bottom: 0.75rem;">Yesterday's Games</div>
           <div class="games-grid" id="last-night-games-container"></div>
         </div>
 
         <div id="past-games-wrapper" style="margin-bottom: 2rem;">
-          <div class="section-label" style="margin-bottom: 0.75rem;">Recent Results (Past 3 Days)</div>
+          <div class="section-label" style="margin-bottom: 0.75rem;">Recent Results (Earlier Past Days)</div>
           <div class="games-grid" id="past-games-container"></div>
         </div>
 
