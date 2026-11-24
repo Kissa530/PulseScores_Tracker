@@ -883,29 +883,37 @@
       </div>
     `;
 
-    return `
-      <article class="game-card ${isSpotlight ? 'spotlight' : ''}" data-game-id="${game.id}" data-matchup="${matchupTitle}">
-        <div class="game-card-header">
-          <div class="badge-group">
-            ${isSpotlight ? `<span class="favorite-badge">${badgeLabel}</span>` : ''}
-            ${clutchBadge}
-            ${broadcastBadge}
-          </div>
-          <span class="game-status-badge ${isLive ? 'live' : isFinal ? 'final' : 'upcoming'}">
-            ${isLive ? '● LIVE' : isFinal ? 'FINAL' : 'UPCOMING'}
-          </span>
-        </div>
+    const quarterStripHtml = renderCardQuarterStrip(game);
 
-        <div class="matchup">
+    const statusBadgeHtml = isLive
+      ? `<span class="game-status-badge live">● LIVE</span>`
+      : isFinal
+      ? `<span class="game-status-badge final">FINAL</span>`
+      : `<span class="game-status-badge upcoming">UPCOMING</span>`;
+
+    return `
+      <article class="game-card ${isSpotlight ? 'spotlight' : ''} ${isLive ? 'is-live' : ''}" data-game-id="${game.id}">
+        <div class="game-card-header">
+          <div class="status-group">
+            ${isSpotlight ? `<span class="fav-badge">${badgeLabel}</span>` : ''}
+            ${statusBadgeHtml}
+            ${clutchBadge}
+          </div>
+          <div class="meta-right">
+            ${broadcastBadge}
+            <span class="game-period">${displayPeriod}</span>
+          </div>
+        </div>
+        <div class="matchup-rows">
           ${awayRowHtml}
           ${homeRowHtml}
         </div>
-
-        ${renderCardQuarterStrip(game)}
-
+        ${quarterStripHtml}
         <div class="game-card-footer">
-          <span class="game-time">${displayPeriod}</span>
-          <span class="boxscore-hint">Box Score →</span>
+          <span>${game.dateLabel}</span>
+          <button type="button" class="boxscore-trigger" data-game-id="${game.id}" data-matchup="${matchupTitle}">
+            Box Score →
+          </button>
         </div>
       </article>
     `;
@@ -914,100 +922,115 @@
   function renderDashboard(games) {
     renderFilterBar();
 
-    if (!Array.isArray(games) || games.length === 0) {
-      if (favoriteSection) favoriteSection.classList.add('hidden');
-      if (otherContainer) {
-        otherContainer.innerHTML = `<p class="loading-text">No NBA games found for this 7-day window.</p>`;
-      }
-      return;
-    }
+    const safeGames = Array.isArray(games) ? games : [];
 
-    // 1. Your Team Spotlight (Today's game first, otherwise All-Day Yesterday Rollover)
-    let spotlightGame = null;
+    // 1. Your Team Spotlight
+    // - When activeSlateFilter is 'YESTERDAY': only show yesterday's game; hide if none
+    // - Otherwise: only show today's game; if none, show a clean "no game today" message
     if (favoriteTeamCode && favoriteSection && favoriteContainer) {
-      const teamGames = games.filter(
+      const teamGames = safeGames.filter(
         g => g.home_team_code === favoriteTeamCode || g.away_team_code === favoriteTeamCode
       );
 
-      const todayGame = teamGames.find(g => g.dateGroup === 'today');
-      const yesterdayGame = teamGames.find(g => g.dateGroup === 'yesterday');
-
-      if (todayGame) {
-        spotlightGame = todayGame;
-        favoriteSection.classList.remove('hidden');
-        favoriteContainer.innerHTML = renderGameCard(todayGame, true, '⭐ Favorite');
-      } else if (yesterdayGame) {
-        spotlightGame = yesterdayGame;
-        favoriteSection.classList.remove('hidden');
-        favoriteContainer.innerHTML = renderGameCard(yesterdayGame, true, '⭐ Favorite • Yesterday');
+      if (activeSlateFilter === 'YESTERDAY') {
+        const yesterdayGame = teamGames.find(g => g.dateGroup === 'yesterday');
+        if (yesterdayGame) {
+          favoriteSection.classList.remove('hidden');
+          favoriteContainer.innerHTML = renderGameCard(yesterdayGame, true, '⭐ Favorite');
+        } else {
+          favoriteSection.classList.add('hidden');
+          favoriteContainer.innerHTML = '';
+        }
       } else {
-        favoriteSection.classList.add('hidden');
-        favoriteContainer.innerHTML = '';
+        const todayGame = teamGames.find(g => g.dateGroup === 'today');
+        if (todayGame) {
+          favoriteSection.classList.remove('hidden');
+          favoriteContainer.innerHTML = renderGameCard(todayGame, true, '⭐ Favorite');
+        } else {
+          const teamName =
+            teamGames.find(g => g.away_team_code === favoriteTeamCode)?.away_team_name ||
+            teamGames.find(g => g.home_team_code === favoriteTeamCode)?.home_team_name ||
+            favoriteTeamCode;
+
+          favoriteSection.classList.remove('hidden');
+          favoriteContainer.innerHTML = `
+            <div class="empty-state">
+              ${teamName} (${favoriteTeamCode}) does not have a game today.
+            </div>
+          `;
+        }
       }
     } else if (favoriteSection) {
       favoriteSection.classList.add('hidden');
+      if (favoriteContainer) favoriteContainer.innerHTML = '';
     }
 
-    // 2. Apply Status & Slate Filters to Main Scoreboard Grid
-    const filteredGames = games.filter(g => {
-      if (spotlightGame && g.id === spotlightGame.id) return false;
+    // 2. Other / Filtered Games
+    const filteredGames = safeGames.filter(game => {
+      const statusMatch =
+        activeStatusFilter === 'ALL' || game.status === activeStatusFilter;
 
-      if (activeStatusFilter !== 'ALL' && g.status !== activeStatusFilter) {
-        return false;
-      }
-
-      if (activeSlateFilter === 'TODAY' && g.dateGroup !== 'today') {
-        return false;
-      }
-      if (activeSlateFilter === 'YESTERDAY' && g.dateGroup !== 'yesterday') {
-        return false;
-      }
-      if (activeSlateFilter === 'UPCOMING' && g.dateGroup !== 'upcoming') {
-        return false;
+      let slateMatch = true;
+      if (activeSlateFilter === 'TODAY') {
+        slateMatch = game.dateGroup === 'today';
+      } else if (activeSlateFilter === 'YESTERDAY') {
+        slateMatch = game.dateGroup === 'yesterday';
+      } else if (activeSlateFilter === 'UPCOMING') {
+        slateMatch = game.dateGroup === 'upcoming';
       }
 
-      return true;
-    });
-
-    // Sort: LIVE first, then TODAY/UPCOMING chronologically, then YESTERDAY/PAST most recent first
-    const statusPriority = { LIVE: 0, UPCOMING: 1, FINAL: 2 };
-    filteredGames.sort((a, b) => {
-      if (statusPriority[a.status] !== statusPriority[b.status]) {
-        return statusPriority[a.status] - statusPriority[b.status];
-      }
-      return a.status === 'FINAL'
-        ? b.startTimeMs - a.startTimeMs
-        : a.startTimeMs - b.startTimeMs;
+      return statusMatch && slateMatch;
     });
 
     if (otherHeading) {
-      const slateTitles = {
-        ALL: 'Full Week Scoreboard',
+      const slateLabels = {
+        ALL: 'Full Week Games',
         TODAY: "Today's Games",
         YESTERDAY: "Yesterday's Games",
-        UPCOMING: 'Next 3 Days'
+        UPCOMING: 'Next 3 Days Games'
       };
-      otherHeading.textContent = slateTitles[activeSlateFilter] || 'Scoreboard';
+      const baseTitle = slateLabels[activeSlateFilter] || 'Games';
+      otherHeading.textContent =
+        activeStatusFilter === 'ALL'
+          ? baseTitle
+          : `${baseTitle} • ${activeStatusFilter}`;
     }
 
     if (otherContainer) {
       if (filteredGames.length === 0) {
         otherContainer.innerHTML = `<p class="loading-text">No games match the selected filters.</p>`;
       } else {
-        otherContainer.innerHTML = filteredGames.map(game => renderGameCard(game, false)).join('');
+        otherContainer.innerHTML = filteredGames
+          .map(game => renderGameCard(game, false))
+          .join('');
       }
     }
 
-    // Bind Click Listeners for Box Score Modal
+    // Bind Box Score clicks across spotlight & main scoreboard
+    document.querySelectorAll('.boxscore-trigger').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openBoxScoreModal(btn.dataset.gameId, btn.dataset.matchup);
+      });
+    });
+
     document.querySelectorAll('.game-card').forEach(card => {
       card.addEventListener('click', () => {
-        openBoxScoreModal(card.dataset.gameId, card.dataset.matchup);
+        const trigger = card.querySelector('.boxscore-trigger');
+        if (trigger) {
+          openBoxScoreModal(trigger.dataset.gameId, trigger.dataset.matchup);
+        }
       });
     });
   }
 
   // --- Event Listeners ---
   if (favoriteSelect) {
+    hydrateFavoriteSelectEmojis();
+    if (favoriteTeamCode) {
+      favoriteSelect.value = favoriteTeamCode;
+    }
+
     favoriteSelect.addEventListener('change', async (e) => {
       favoriteTeamCode = normalizeCode(e.target.value);
       localStorage.setItem(STORAGE_KEY, favoriteTeamCode);
@@ -1023,15 +1046,66 @@
     refreshBtn.addEventListener('click', () => fetchLiveGames(true));
   }
 
-  // Box Score Modal Events
-  if (closeBoxscoreBtn) {
-    closeBoxscoreBtn.addEventListener('click', () => boxscoreModal?.classList.add('hidden'));
+  if (authModalBtn && authModal) {
+    authModalBtn.addEventListener('click', () => {
+      isSignUpMode = false;
+      if (authModalTitle) authModalTitle.textContent = 'Sign In';
+      if (authSubmitBtn) authSubmitBtn.textContent = 'Sign In';
+      if (authSwitchMode) authSwitchMode.textContent = 'Need an account? Sign Up';
+      if (authError) authError.textContent = '';
+      authModal.classList.remove('hidden');
+    });
   }
 
-  if (boxscoreModal) {
-    boxscoreModal.addEventListener('click', (e) => {
-      if (e.target === boxscoreModal) boxscoreModal.classList.add('hidden');
+  if (closeModalBtn && authModal) {
+    closeModalBtn.addEventListener('click', () => authModal.classList.add('hidden'));
+  }
+
+  if (authSwitchMode) {
+    authSwitchMode.addEventListener('click', () => {
+      isSignUpMode = !isSignUpMode;
+      if (authModalTitle) authModalTitle.textContent = isSignUpMode ? 'Create Account' : 'Sign In';
+      if (authSubmitBtn) authSubmitBtn.textContent = isSignUpMode ? 'Sign Up' : 'Sign In';
+      if (authSwitchMode) {
+        authSwitchMode.textContent = isSignUpMode
+          ? 'Already have an account? Sign In'
+          : 'Need an account? Sign Up';
+      }
+      if (authError) authError.textContent = '';
     });
+  }
+
+  if (authForm) {
+    authForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (authError) authError.textContent = '';
+
+      const email = authEmailInput?.value?.trim() || '';
+      const password = authPasswordInput?.value || '';
+
+      try {
+        if (isSignUpMode) {
+          const { error } = await supabaseClient.auth.signUp({ email, password });
+          if (error) throw error;
+          if (authError) authError.textContent = 'Check your email to confirm your account.';
+        } else {
+          const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
+          if (error) throw error;
+        }
+      } catch (err) {
+        if (authError) authError.textContent = err.message || 'Authentication error.';
+      }
+    });
+  }
+
+  if (logoutBtn) {
+    logoutBtn.addEventListener('click', async () => {
+      await supabaseClient.auth.signOut();
+    });
+  }
+
+  if (closeBoxscoreBtn && boxscoreModal) {
+    closeBoxscoreBtn.addEventListener('click', () => boxscoreModal.classList.add('hidden'));
   }
 
   if (tabAway && tabHome) {
@@ -1050,75 +1124,13 @@
     });
   }
 
-  // Auth Modal Events
-  if (authModalBtn) {
-    authModalBtn.addEventListener('click', () => {
-      isSignUpMode = false;
-      if (authModalTitle) authModalTitle.textContent = 'Sign In to PulseScores';
-      if (authSubmitBtn) authSubmitBtn.textContent = 'Sign In';
-      if (authError) authError.classList.add('hidden');
-      authModal?.classList.remove('hidden');
-    });
-  }
-
-  if (closeModalBtn) {
-    closeModalBtn.addEventListener('click', () => authModal?.classList.add('hidden'));
-  }
-
-  if (authSwitchMode) {
-    authSwitchMode.addEventListener('click', (e) => {
-      e.preventDefault();
-      isSignUpMode = !isSignUpMode;
-      if (authModalTitle) {
-        authModalTitle.textContent = isSignUpMode ? 'Create PulseScores Account' : 'Sign In to PulseScores';
-      }
-      if (authSubmitBtn) {
-        authSubmitBtn.textContent = isSignUpMode ? 'Sign Up' : 'Sign In';
-      }
-      authSwitchMode.textContent = isSignUpMode
-        ? 'Already have an account? Sign In'
-        : "Don't have an account? Sign Up";
-    });
-  }
-
-  if (authForm) {
-    authForm.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const email = authEmailInput.value.trim();
-      const password = authPasswordInput.value;
-
-      if (authError) authError.classList.add('hidden');
-
-      try {
-        const { error } = isSignUpMode
-          ? await supabaseClient.auth.signUp({ email, password })
-          : await supabaseClient.auth.signInWithPassword({ email, password });
-
-        if (error) throw error;
-        authForm.reset();
-        authModal?.classList.add('hidden');
-      } catch (err) {
-        if (authError) {
-          authError.textContent = err.message;
-          authError.classList.remove('hidden');
-        }
-      }
-    });
-  }
-
-  if (logoutBtn) {
-    logoutBtn.addEventListener('click', async () => {
-      await supabaseClient.auth.signOut();
-    });
-  }
+  window.addEventListener('click', (e) => {
+    if (e.target === authModal && authModal) authModal.classList.add('hidden');
+    if (e.target === boxscoreModal && boxscoreModal) boxscoreModal.classList.add('hidden');
+  });
 
   // --- Initialization ---
-  hydrateFavoriteSelectEmojis();
-  if (favoriteSelect && favoriteTeamCode) {
-    favoriteSelect.value = favoriteTeamCode;
-  }
-
   checkUserSession();
-  fetchLiveGames();
+  fetchLiveGames(false);
   setInterval(() => fetchLiveGames(false), REFRESH_INTERVAL_MS);
 })();
