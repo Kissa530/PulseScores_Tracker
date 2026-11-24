@@ -439,10 +439,11 @@
       const nowDate = new Date();
       const todayStr = formatDateYYYYMMDD(nowDate);
 
-      const yesterdayDate = new Date();
+      const yesterdayDate = new Date(nowDate);
       yesterdayDate.setDate(nowDate.getDate() - 1);
       const yesterdayStr = formatDateYYYYMMDD(yesterdayDate);
 
+      const seenEventIds = new Set();
       const allEvents = [];
 
       results.forEach((data, index) => {
@@ -461,6 +462,9 @@
         }
 
         events.forEach(event => {
+          if (!event?.id || seenEventIds.has(event.id)) return;
+          seenEventIds.add(event.id);
+
           const comp = event.competitions[0];
           const home = comp.competitors.find(c => c.homeAway === 'home');
           const away = comp.competitors.find(c => c.homeAway === 'away');
