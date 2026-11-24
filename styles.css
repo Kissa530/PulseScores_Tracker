@@ -1236,3 +1236,16 @@ body {
     font-size: 0.74rem;
   }
 }
+.game-card-footer .boxscore-trigger,
+button.boxscore-trigger {
+  background: linear-gradient(135deg, #2563eb 0%, #06b6d4 100%) !important;
+  color: #ffffff !important;
+  border: 1px solid #7dd3fc !important;
+}
+
+.game-card.spotlight .boxscore-trigger {
+  background: linear-gradient(135deg, #f59e0b 0%, #ea580c 100%) !important;
+  color: #090d16 !important;
+  border: 1px solid #fef08a !important;
+}
+
