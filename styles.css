@@ -369,18 +369,45 @@ body {
 
 .game-card-footer {
   margin-top: 0.85rem;
-  padding-top: 0.62rem;
+  padding-top: 0.65rem;
   border-top: 1px solid rgba(148, 163, 184, 0.14);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
   font-size: 0.76rem;
-  color: var(--accent-primary-bright);
-  font-weight: 700;
-  text-align: right;
-  letter-spacing: 0.01em;
-  transition: color var(--transition);
+  color: var(--text-secondary);
+  font-weight: 600;
 }
 
-.game-card:hover .game-card-footer {
-  color: var(--accent-cyan);
+.boxscore-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.24) 0%, rgba(34, 211, 238, 0.16) 100%);
+  color: #7dd3fc;
+  border: 1px solid rgba(56, 189, 248, 0.45);
+  border-radius: var(--radius-full);
+  padding: 0.28rem 0.72rem;
+  font-family: inherit;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.14);
+  transition: background var(--transition), color var(--transition), border-color var(--transition), box-shadow var(--transition), transform 0.12s ease;
+}
+
+.boxscore-trigger:hover,
+.game-card:hover .boxscore-trigger {
+  background: linear-gradient(135deg, #3b82f6 0%, #06b6d4 100%);
+  color: #ffffff;
+  border-color: rgba(186, 230, 253, 0.7);
+  box-shadow: 0 4px 16px rgba(59, 130, 246, 0.42);
+}
+
+.boxscore-trigger:active {
+  transform: scale(0.96);
 }
 
 /* Spotlight Card Styling */
@@ -395,6 +422,21 @@ body {
 .game-card.spotlight:hover {
   border-color: #fde047;
   box-shadow: 0 16px 40px rgba(245, 158, 11, 0.3), 0 0 0 1px rgba(253, 224, 71, 0.5);
+}
+
+.game-card.spotlight .boxscore-trigger {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.26) 0%, rgba(251, 191, 36, 0.16) 100%);
+  color: #fde68a;
+  border-color: rgba(251, 191, 36, 0.52);
+  box-shadow: 0 0 12px rgba(245, 158, 11, 0.18);
+}
+
+.game-card.spotlight:hover .boxscore-trigger,
+.game-card.spotlight .boxscore-trigger:hover {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  color: #0b1120;
+  border-color: #fef08a;
+  box-shadow: 0 4px 16px rgba(245, 158, 11, 0.45);
 }
 
 .spotlight-badge {
